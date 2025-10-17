@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  role         Role
+  passwordHash String?
+  inviteToken  String?
+  tokenExpiry  DateTime?
+  createdAt    DateTime @default(now())
+  enquiries    Enquiry[] @relation("AssignedStaff")
+  documents    Document[] @relation("UploadedBy")
+  shortlists   Shortlist[] @relation("ShortlistStaff")
+  cashfreeApps CashfreeApplication[] @relation("SubmittedBy")
+  auditLogs    AuditLog[]
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+model Enquiry {
+  id               Int      @id @default(autoincrement())
+  date             DateTime @default(now())
+  name             String?
+  businessName     String?
+  ownerName        String?
+  mobile           String
+  email            String?
+  gst              String?
+  gstNumber        String?
+  businessType     String?
+  businessCategory String?
+  loanAmount       Float?
+  loanPurpose      String?
+  monthlyTurnover  Float?
+  businessAge      Int?
+  address          String?
+  staffId          Int?
+  comments         CommentStatus?
+  interestStatus   InterestStatus?
+  createdAt        DateTime @default(now())
+  staff            User?    @relation("AssignedStaff", fields: [staffId], references: [id])
+  documents        Document[]
+  shortlist        Shortlist?
+}
+
+enum CommentStatus {
+  NO_RESPONSE
+  CHAT_CALL1_COMPLETED
+  SECOND_CALL_COMPLETED
+  THIRD_CALL_COMPLETED
+  ELIGIBLE
+  NOT_ELIGIBLE
+  NO_GST
+}
+
+enum InterestStatus {
+  INTERESTED
+  NOT_INTERESTED
+}
+
+model Document {
+  id         Int      @id @default(autoincrement())
+  enquiryId  Int
+  type       DocumentType
+  s3Url      String
+  verified   Boolean  @default(false)
+  uploadedById Int
+  uploadedAt DateTime @default(now())
+  enquiry    Enquiry  @relation(fields: [enquiryId], references: [id])
+  uploadedBy User     @relation("UploadedBy", fields: [uploadedById], references: [id])
+}
+
+enum DocumentType {
+  GST
+  UDYAM
+  BANK_STATEMENT
+  OWNER_PAN
+  AADHAR
+  WEBSITE_GATEWAY
+  IE_CODE
+}
+
+model Shortlist {
+  id                  Int      @id @default(autoincrement())
+  enquiryId           Int      @unique
+  date                DateTime @default(now())
+  name                String
+  mobile              String
+  businessName        String?
+  businessNature      String?
+  district            String?
+  propPvt             String?
+  gst                 String?
+  businessPan         String?
+  iec                 String?
+  newCurrentAccount   Boolean?
+  website             String?
+  gateway             String?
+  transaction         String?
+  bankStatementDuration String?
+  loanAmount          Float?
+  cap                 Float?
+  bankAccount         String?
+  comments            String?
+  staffId             Int?
+  gstStatus           String?
+  createdAt           DateTime @default(now())
+  enquiry             Enquiry  @relation(fields: [enquiryId], references: [id])
+  staff               User?    @relation("ShortlistStaff", fields: [staffId], references: [id])
+  cashfreeApplication CashfreeApplication?
+}
+
+model CashfreeApplication {
+  id           Int      @id @default(autoincrement())
+  shortlistId  Int      @unique
+  status       CashfreeStatus
+  submittedById Int
+  submittedAt  DateTime @default(now())
+  decisionDate DateTime?
+  shortlist    Shortlist @relation(fields: [shortlistId], references: [id])
+  submittedBy  User     @relation("SubmittedBy", fields: [submittedById], references: [id])
+}
+
+enum CashfreeStatus {
+  PENDING
+  TRANSACTION_DONE
+  CLOSED
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  action     String
+  targetTable String
+  targetId   Int
+  timestamp  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
