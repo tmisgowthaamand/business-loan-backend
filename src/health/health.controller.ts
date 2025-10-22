@@ -11,9 +11,9 @@ export class HealthController {
     
     return {
       status: 'ok',
-      message: 'Backend is running successfully',
+      message: 'Backend is running successfully with all localhost data',
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
+      version: '1.0.1',
       cors: 'enabled',
       endpoints: [
         '/api/health',
