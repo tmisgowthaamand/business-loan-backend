@@ -1,12 +1,10 @@
-FROM node:18-alpine
+FROM node:18-slim
 
-# Install required system dependencies including OpenSSL
-RUN apk add --no-cache \
-    dumb-init \
+# Install required system dependencies
+RUN apt-get update && apt-get install -y \
     openssl \
-    libc6-compat \
-    libssl1.1 \
-    ca-certificates
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /app
@@ -23,7 +21,7 @@ RUN echo "🔧 Installing dependencies..." && \
 # Copy source code
 COPY . .
 
-# Generate Prisma client with correct binary targets and build
+# Generate Prisma client and build
 RUN echo "🔧 Generating Prisma client..." && \
     npx prisma generate && \
     echo "🔧 Building application..." && \
@@ -38,8 +36,7 @@ RUN echo "🔧 Generating Prisma client..." && \
     echo "✅ Production dependencies ready"
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nestjs -u 1001
+RUN groupadd -r nodejs && useradd -r -g nodejs nestjs
 
 # Change ownership of the app directory
 RUN chown -R nestjs:nodejs /app
@@ -48,8 +45,5 @@ USER nestjs
 # Expose port
 EXPOSE 5002
 
-# Use dumb-init to handle signals properly
-ENTRYPOINT ["dumb-init", "--"]
-
-# Start the application directly with node
+# Start the application
 CMD ["node", "dist/main.js"]

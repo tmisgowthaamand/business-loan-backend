@@ -4,25 +4,12 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: |
-      echo "🔧 Starting deployment build..."
-      echo "Node version: $(node --version)"
-      echo "NPM version: $(npm --version)"
-      echo "Working directory: $(pwd)"
-      echo "🔧 Installing dependencies..."
-      npm ci --verbose
-      echo "🔧 Generating Prisma client..."
-      npx prisma generate
-      echo "🔧 Building TypeScript application..."
-      npm run build
-      echo "🔧 Verifying build output..."
-      ls -la dist/ || echo "No dist directory found"
-      test -f dist/main.js && echo "✅ main.js found" || echo "❌ main.js missing"
-      test -f dist/main.js && echo "File size: $(wc -c < dist/main.js) bytes" || echo "Cannot check file size"
-      echo "✅ Build process completed"
-    startCommand: node dist/main.js
+    buildCommand: npm run render:build
+    startCommand: npm run render:start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
+      - key: DATABASE_URL
+        value: file:./dev.db
+      - key: PRISMA_QUERY_ENGINE_LIBRARY
+        value: /opt/render/project/src/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node

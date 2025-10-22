@@ -17,6 +17,8 @@
     "start:direct": "node dist/main.js",
     "build:check": "node build-check.js",
     "deploy:build": "npm ci && npx prisma generate && npm run build && npm run build:check",
+    "render:build": "npm ci && npx prisma generate && npm run build",
+    "render:start": "node dist/main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
