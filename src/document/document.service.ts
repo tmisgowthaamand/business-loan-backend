@@ -24,7 +24,7 @@ export class DocumentService {
   private readonly documentsFile = path.join(this.dataDir, 'documents.json');
   private demoDocuments: any[] = [];
 
-  // Static enquiry mapping to avoid circular dependency
+  // Static enquiry mapping to avoid circular dependency - Updated with all current clients
   private readonly enquiryMapping = {
     9570: { name: 'BALAMURUGAN', mobile: '9876543215' },
     1001: { name: 'Rajesh Kumar', mobile: '9876543210' },
@@ -33,7 +33,16 @@ export class DocumentService {
     1004: { name: 'Sunita Gupta', mobile: '9876543213' },
     1005: { name: 'Vikram Singh', mobile: '9876543214' },
     6192: { name: 'Renu', mobile: '9876543210' },
-    3886: { name: 'VIGNESH S', mobile: '9876543220' }
+    3886: { name: 'VIGNESH S', mobile: '9876543220' },
+    1006: { name: 'SUJATA GUPTA', mobile: '9876543216' },
+    1007: { name: 'AMIT PATEL', mobile: '9876543217' },
+    1008: { name: 'PRIYA SHARMA', mobile: '9876543218' },
+    1009: { name: 'RAJESH KUMAR', mobile: '9876543219' },
+    1010: { name: 'BALAMURUGAN', mobile: '9876543220' },
+    1011: { name: 'Hari', mobile: '9876543221' },
+    1012: { name: 'John Doe', mobile: '9876543222' },
+    1013: { name: 'Auto Sync Test', mobile: '9876543223' },
+    1014: { name: 'VIGNESH S', mobile: '9876543224' }
   };
 
   // Helper method to get enquiry info from static mapping
@@ -757,19 +766,35 @@ export class DocumentService {
       });
       
       // Convert back to array and refresh enquiry information
-      const deduplicatedDocuments = Array.from(uniqueDocuments.values()).map(doc => {
-        // Refresh enquiry information for each document
-        const realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
+      const deduplicatedDocuments = await Promise.all(Array.from(uniqueDocuments.values()).map(async doc => {
+        // Try to get enquiry information from static mapping first
+        let realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
+        
+        // If not found in static mapping, try to get from enquiry service
+        if (!realEnquiry && this.enquiryService) {
+          try {
+            const enquiryData = await this.enquiryService.findOne(doc.enquiryId);
+            if (enquiryData) {
+              realEnquiry = {
+                name: enquiryData.name || enquiryData.businessName,
+                mobile: enquiryData.mobile
+              };
+            }
+          } catch (error) {
+            console.log('📄 Could not fetch enquiry from service:', error.message);
+          }
+        }
         
         return {
           ...doc,
           enquiry: {
             id: doc.enquiryId,
             name: realEnquiry ? realEnquiry.name : `Client ${doc.enquiryId}`,
-            mobile: realEnquiry ? realEnquiry.mobile : '9876543210'
+            mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
+            businessType: doc.enquiry?.businessType || 'General Business'
           }
         };
-      });
+      }));
       
       // Sort by upload date (newest first)
       const sortedDocuments = deduplicatedDocuments.sort((a, b) => 
