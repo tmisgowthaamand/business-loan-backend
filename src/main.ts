@@ -24,7 +24,8 @@ async function bootstrap() {
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3001',
       'http://127.0.0.1:3002',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
+      'https://business-loan-portal.vercel.app'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -33,11 +34,11 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
-  const port = 5002; // Use port 5002 to avoid conflict
+  const port = process.env.PORT || 5002; // Use Render's port or fallback to 5002
   console.log(`🌐 Attempting to start server on port ${port}...`);
   await app.listen(port);
-  console.log(`🎉 Backend server successfully running on http://localhost:${port}`);
-  console.log(`📋 API endpoints available at http://localhost:${port}/api/`);
-  console.log(`🔧 Supabase endpoints: http://localhost:${port}/api/supabase/ping`);
+  console.log(`🎉 Backend server successfully running on port ${port}`);
+  console.log(`📋 API endpoints available at /api/`);
+  console.log(`🔧 Supabase endpoints: /api/supabase/ping`);
 }
 bootstrap();
