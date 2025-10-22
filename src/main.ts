@@ -15,21 +15,51 @@ async function bootstrap() {
     }),
   );
 
+  // Enable CORS with comprehensive configuration
   app.enableCors({
-    origin: [
-      'http://localhost:3000', 
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:3001',
-      'http://127.0.0.1:3002',
-      'http://127.0.0.1:5173',
-      'https://business-loan-portal.vercel.app'
-    ],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      const allowedOrigins = [
+        'http://localhost:3000', 
+        'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'http://127.0.0.1:3002',
+        'http://127.0.0.1:5173',
+        'https://business-loan-frontend.vercel.app',
+        'https://business-loan-portal.vercel.app'
+      ];
+      
+      // Allow all Vercel deployments
+      if (origin.includes('.vercel.app')) {
+        return callback(null, true);
+      }
+      
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      console.log('❌ CORS blocked origin:', origin);
+      return callback(new Error('Not allowed by CORS'), false);
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type', 
+      'Authorization', 
+      'X-Requested-With', 
+      'Accept', 
+      'Origin',
+      'Access-Control-Request-Method',
+      'Access-Control-Request-Headers'
+    ],
+    exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   app.setGlobalPrefix('api');

@@ -6,6 +6,7 @@ export class HealthController {
 
   @Get()
   async getHealth() {
+    console.log('🏥 Health check endpoint called');
     const supabaseInfo = { url: 'Demo Mode', project: 'Business Loan', status: 'Mock' };
     
     return {
@@ -13,6 +14,16 @@ export class HealthController {
       message: 'Backend is running successfully',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
+      cors: 'enabled',
+      endpoints: [
+        '/api/health',
+        '/api/enquiries',
+        '/api/documents',
+        '/api/shortlist',
+        '/api/notifications',
+        '/api/staff',
+        '/api/transactions'
+      ],
       supabase: {
         project: supabaseInfo.project,
         url: supabaseInfo.url,
