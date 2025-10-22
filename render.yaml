@@ -2,13 +2,27 @@ services:
   - type: web
     name: business-loan-backend
     env: node
-    buildCommand: npm ci && npx prisma generate && npm run build
-    startCommand: npm run start:prod
+    region: oregon
+    plan: free
+    buildCommand: |
+      echo "🔧 Starting deployment build..."
+      echo "Node version: $(node --version)"
+      echo "NPM version: $(npm --version)"
+      echo "Working directory: $(pwd)"
+      echo "🔧 Installing dependencies..."
+      npm ci --verbose
+      echo "🔧 Generating Prisma client..."
+      npx prisma generate
+      echo "🔧 Building TypeScript application..."
+      npm run build
+      echo "🔧 Verifying build output..."
+      ls -la dist/ || echo "No dist directory found"
+      test -f dist/main.js && echo "✅ main.js found" || echo "❌ main.js missing"
+      test -f dist/main.js && echo "File size: $(wc -c < dist/main.js) bytes" || echo "Cannot check file size"
+      echo "✅ Build process completed"
+    startCommand: node dist/main.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        fromService:
-          type: web
-          name: business-loan-backend
-          property: port
+        value: 10000
