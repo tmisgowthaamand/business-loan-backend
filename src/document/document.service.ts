@@ -45,55 +45,74 @@ export class DocumentService {
     1014: { name: 'VIGNESH S', mobile: '9876543224' }
   };
 
-  // Helper method to get enquiry info from static mapping or enquiry service
-  public getEnquiryInfo(enquiryId: number) {
+  // Helper method to get enquiry info from enquiry service or static mapping fallback
+  public async getEnquiryInfo(enquiryId: number) {
+    try {
+      // First try to get from enquiry service (real data)
+      if (this.enquiryService) {
+        const enquiry = await this.enquiryService.findOne(enquiryId);
+        if (enquiry) {
+          console.log('📄 Found enquiry from service:', enquiry.name);
+          return {
+            name: enquiry.name,
+            mobile: enquiry.mobile,
+            businessType: enquiry.businessType,
+            businessName: enquiry.businessName
+          };
+        }
+      }
+    } catch (error) {
+      console.log('📄 Could not fetch from enquiry service, using static mapping:', error.message);
+    }
+    
+    // Fallback to static mapping if service call fails
     const enquiry = this.enquiryMapping[enquiryId];
     if (enquiry) {
+      console.log('📄 Found enquiry from static mapping:', enquiry.name);
       return enquiry;
     }
     
-    // If not found in static mapping, try to get from enquiry service
-    // This will handle dynamic enquiry IDs that aren't in our static mapping
-    try {
-      // For demo purposes, we'll create a fallback mapping for common enquiry patterns
-      // Based on actual enquiry IDs found in the documents
-      const fallbackMapping = {
-        // Original mapping
-        4368: { name: 'BALAMURUGAN', mobile: '9876543215' },
-        4369: { name: 'RAJESH KUMAR', mobile: '9876543216' },
-        4370: { name: 'PRIYA SHARMA', mobile: '9876543217' },
-        4371: { name: 'AMIT PATEL', mobile: '9876543218' },
-        4372: { name: 'SUNITA GUPTA', mobile: '9876543219' },
-        4373: { name: 'VIKRAM SINGH', mobile: '9876543220' },
-        4374: { name: 'ANITA DESAI', mobile: '9876543221' },
-        4375: { name: 'RAVI KUMAR', mobile: '9876543222' },
-        4376: { name: 'MEERA PATEL', mobile: '9876543223' },
-        4377: { name: 'SURESH GUPTA', mobile: '9876543224' },
-        // Actual enquiry IDs from documents
-        5874: { name: 'POORANI', mobile: '9876543225' },
-        3886: { name: 'VIGNESH S', mobile: '9876543220' },
-        6192: { name: 'RENU', mobile: '9876543226' },
-        2724: { name: 'MANIGANDAN M', mobile: '9876543227' },
-        6930: { name: 'PRABA', mobile: '9876543228' },
-        8355: { name: 'AUTO SYNC TEST', mobile: '9876543229' },
-        // Additional common IDs
-        1001: { name: 'RAJESH KUMAR', mobile: '9876543210' },
-        1002: { name: 'PRIYA SHARMA', mobile: '9876543211' },
-        1003: { name: 'AMIT PATEL', mobile: '9876543212' },
-        1004: { name: 'SUNITA GUPTA', mobile: '9876543213' },
-        1005: { name: 'VIKRAM SINGH', mobile: '9876543214' }
-      };
-      
-      return fallbackMapping[enquiryId] || null;
-    } catch (error) {
-      console.log('📄 Could not fetch dynamic enquiry info for ID:', enquiryId);
-      return null;
+    // Extended fallback mapping for common enquiry patterns
+    const fallbackMapping = {
+      // Original mapping
+      4368: { name: 'BALAMURUGAN', mobile: '9876543215', businessType: 'Manufacturing' },
+      4369: { name: 'RAJESH KUMAR', mobile: '9876543216', businessType: 'Trading' },
+      4370: { name: 'PRIYA SHARMA', mobile: '9876543217', businessType: 'Textiles' },
+      4371: { name: 'AMIT PATEL', mobile: '9876543218', businessType: 'Electronics' },
+      4372: { name: 'SUNITA GUPTA', mobile: '9876543219', businessType: 'Manufacturing' },
+      4373: { name: 'VIKRAM SINGH', mobile: '9876543220', businessType: 'Trading' },
+      4374: { name: 'ANITA DESAI', mobile: '9876543221', businessType: 'Textiles' },
+      4375: { name: 'RAVI KUMAR', mobile: '9876543222', businessType: 'Electronics' },
+      4376: { name: 'MEERA PATEL', mobile: '9876543223', businessType: 'Manufacturing' },
+      4377: { name: 'SURESH GUPTA', mobile: '9876543224', businessType: 'Trading' },
+      // Actual enquiry IDs from documents
+      5874: { name: 'POORANI', mobile: '9876543225', businessType: 'Manufacturing' },
+      3886: { name: 'VIGNESH S', mobile: '9876543220', businessType: 'Trading' },
+      6192: { name: 'RENU', mobile: '9876543226', businessType: 'Textiles' },
+      2724: { name: 'MANIGANDAN M', mobile: '9876543227', businessType: 'Electronics' },
+      6930: { name: 'PRABA', mobile: '9876543228', businessType: 'Manufacturing' },
+      8355: { name: 'AUTO SYNC TEST', mobile: '9876543229', businessType: 'Trading' },
+      // Additional common IDs
+      1001: { name: 'RAJESH KUMAR', mobile: '9876543210', businessType: 'Electronics' },
+      1002: { name: 'PRIYA SHARMA', mobile: '9876543211', businessType: 'Textiles' },
+      1003: { name: 'AMIT PATEL', mobile: '9876543212', businessType: 'Electronics' },
+      1004: { name: 'SUNITA GUPTA', mobile: '9876543213', businessType: 'Manufacturing' },
+      1005: { name: 'VIKRAM SINGH', mobile: '9876543214', businessType: 'Trading' }
+    };
+    
+    const fallbackEnquiry = fallbackMapping[enquiryId];
+    if (fallbackEnquiry) {
+      console.log('📄 Found enquiry from fallback mapping:', fallbackEnquiry.name);
+      return fallbackEnquiry;
     }
+    
+    console.log('📄 No enquiry found for ID:', enquiryId);
+    return null;
   }
 
   // Get enhanced enquiry information with document statistics
-  public getEnquiryInfoWithDocuments(enquiryId: number) {
-    const enquiry = this.getEnquiryInfo(enquiryId);
+  public async getEnquiryInfoWithDocuments(enquiryId: number) {
+    const enquiry = await this.getEnquiryInfo(enquiryId);
     if (!enquiry) return null;
 
     const enquiryDocuments = this.demoDocuments.filter(doc => doc.enquiryId === enquiryId);
@@ -121,24 +140,26 @@ export class DocumentService {
     @Optional() private supabaseService: SupabaseService,
     @Optional() @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
+    @Optional() @Inject(forwardRef(() => EnquiryService))
+    private enquiryService: EnquiryService,
   ) {
     this.loadDocuments();
   }
 
-  private loadDocuments() {
+  private async loadDocuments() {
     try {
       if (fs.existsSync(this.documentsFile)) {
         const data = fs.readFileSync(this.documentsFile, 'utf8');
         this.demoDocuments = JSON.parse(data);
         console.log('📄 Loaded', this.demoDocuments.length, 'documents from file');
         
-        // Refresh enquiry information for all loaded documents
-        this.refreshAllDocumentEnquiryInfo();
+        // Refresh enquiry information for all loaded documents (async)
+        await this.refreshAllDocumentEnquiryInfo();
       } else {
         this.demoDocuments = [];
         // Create some sample documents for dashboard testing
         this.createSampleDocuments();
-        console.log('📄 No existing documents file, created sample documents');
+        console.log('📄 Created sample documents for testing');
       }
     } catch (error) {
       console.log('📄 Error loading documents file, creating sample documents:', error);
@@ -149,11 +170,13 @@ export class DocumentService {
     }
   }
 
-  private refreshAllDocumentEnquiryInfo() {
+  private async refreshAllDocumentEnquiryInfo() {
     console.log('📄 Refreshing enquiry information for all documents...');
     
-    this.demoDocuments = this.demoDocuments.map(doc => {
-      const realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
+    // Process documents one by one to handle async calls
+    const updatedDocuments = [];
+    for (const doc of this.demoDocuments) {
+      const realEnquiry = await this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
       
       // Log the mapping for debugging
       if (realEnquiry) {
@@ -162,16 +185,19 @@ export class DocumentService {
         console.log(`📄 No mapping found for enquiry ${doc.enquiryId}, using fallback`);
       }
       
-      return {
+      updatedDocuments.push({
         ...doc,
         enquiry: {
           id: doc.enquiryId,
           name: realEnquiry ? realEnquiry.name : `Client ${doc.enquiryId}`,
           mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
-          businessType: doc.enquiry?.businessType || 'General Business'
+          businessType: realEnquiry ? realEnquiry.businessType : doc.enquiry?.businessType || 'General Business',
+          businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${doc.enquiryId}`
         }
-      };
-    });
+      });
+    }
+    
+    this.demoDocuments = updatedDocuments;
     
     // Save the updated documents
     this.saveDocuments();
@@ -196,7 +222,7 @@ export class DocumentService {
     console.log('🔄 Force refreshing enquiry mapping for all documents...');
     const originalCount = this.demoDocuments.length;
     
-    this.refreshAllDocumentEnquiryInfo();
+    await this.refreshAllDocumentEnquiryInfo();
     
     return {
       message: `Refreshed enquiry mapping for ${originalCount} documents`,
@@ -589,8 +615,8 @@ export class DocumentService {
       let localFilePath = null;
       
       try {
-        // Get enquiry info for client name
-        const enquiryInfo = this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
+        // Get enquiry info for client name (now async)
+        const enquiryInfo = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
         const clientName = enquiryInfo?.name || 'Unknown Client';
         const clientFolder = clientName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
         
@@ -654,8 +680,8 @@ export class DocumentService {
         console.log('📄 Saved to local storage as fallback:', localFilePath);
       }
       
-      // Get real enquiry data
-      const realEnquiry = this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
+      // Get real enquiry data (reuse the enquiry info we already fetched)
+      const realEnquiry = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
       
       // Create document record with Supabase storage URL
       const documentId = Math.floor(Math.random() * 9000) + 1000; // Generate ID between 1000-9999
@@ -680,7 +706,9 @@ export class DocumentService {
         enquiry: {
           id: createDocumentDto.enquiryId,
           name: realEnquiry ? realEnquiry.name : `Client ${createDocumentDto.enquiryId}`,
-          mobile: realEnquiry ? realEnquiry.mobile : '9876543210'
+          mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
+          businessType: realEnquiry ? realEnquiry.businessType : 'General Business',
+          businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${createDocumentDto.enquiryId}`
         }
       };
 
@@ -826,32 +854,34 @@ export class DocumentService {
         }
       });
       
-      // Convert back to array and refresh enquiry information
-      const deduplicatedDocuments = Array.from(uniqueDocuments.values()).map(doc => {
-        // Try to get enquiry information from static mapping first
-        let realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
+      // Convert back to array and refresh enquiry information (async)
+      const deduplicatedDocuments = [];
+      for (const doc of Array.from(uniqueDocuments.values())) {
+        // Try to get enquiry information from service first
+        let realEnquiry = await this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
         
-        // If not found in static mapping, use a fallback approach
+        // If not found, use existing document enquiry data as fallback
         if (!realEnquiry) {
-          // Try to extract name from existing document enquiry data
           if (doc.enquiry && doc.enquiry.name) {
             realEnquiry = {
               name: doc.enquiry.name,
-              mobile: doc.enquiry.mobile || '9876543210'
+              mobile: doc.enquiry.mobile || '9876543210',
+              businessType: doc.enquiry.businessType || 'General Business'
             };
           }
         }
         
-        return {
+        deduplicatedDocuments.push({
           ...doc,
           enquiry: {
             id: doc.enquiryId,
             name: realEnquiry ? realEnquiry.name : `Client ${doc.enquiryId}`,
             mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
-            businessType: doc.enquiry?.businessType || 'General Business'
+            businessType: realEnquiry ? realEnquiry.businessType : doc.enquiry?.businessType || 'General Business',
+            businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${doc.enquiryId}`
           }
-        };
-      });
+        });
+      }
       
       // Sort by upload date (newest first)
       const sortedDocuments = deduplicatedDocuments.sort((a, b) => 
@@ -884,19 +914,22 @@ export class DocumentService {
         }
       });
       
-      // Refresh enquiry information for each document
-      const deduplicatedDocuments = Array.from(uniqueDocuments.values()).map(doc => {
-        const realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
+      // Refresh enquiry information for each document (async)
+      const deduplicatedDocuments = [];
+      for (const doc of Array.from(uniqueDocuments.values())) {
+        const realEnquiry = await this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
         
-        return {
+        deduplicatedDocuments.push({
           ...doc,
           enquiry: {
             id: doc.enquiryId,
             name: realEnquiry ? realEnquiry.name : `Client ${doc.enquiryId}`,
-            mobile: realEnquiry ? realEnquiry.mobile : '9876543210'
+            mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
+            businessType: realEnquiry ? realEnquiry.businessType : 'General Business',
+            businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${doc.enquiryId}`
           }
-        };
-      });
+        });
+      }
       
       console.log('📄 Found documents for enquiry with refreshed info:', deduplicatedDocuments.length);
       return deduplicatedDocuments;
@@ -911,15 +944,17 @@ export class DocumentService {
       // Find document in demo storage
       const document = this.demoDocuments.find(doc => doc.id === id);
       if (document) {
-        // Refresh enquiry information
-        const realEnquiry = this.getEnquiryInfo(parseInt(document.enquiryId.toString()));
+        // Refresh enquiry information (async)
+        const realEnquiry = await this.getEnquiryInfo(parseInt(document.enquiryId.toString()));
         
         return {
           ...document,
           enquiry: {
             id: document.enquiryId,
             name: realEnquiry ? realEnquiry.name : `Client ${document.enquiryId}`,
-            mobile: realEnquiry ? realEnquiry.mobile : '9876543210'
+            mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
+            businessType: realEnquiry ? realEnquiry.businessType : 'General Business',
+            businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${document.enquiryId}`
           }
         };
       }
@@ -1235,7 +1270,7 @@ startxref
     console.log('📄 Manual refresh of enquiry information requested...');
     
     const beforeCount = this.demoDocuments.length;
-    this.refreshAllDocumentEnquiryInfo();
+    await this.refreshAllDocumentEnquiryInfo();
     
     return {
       message: 'Enquiry information refreshed successfully',
@@ -1281,8 +1316,8 @@ startxref
   async createSampleDocumentsForEnquiry(enquiryId: number) {
     console.log('📄 Creating sample documents for enquiry:', enquiryId);
     
-    // Get enquiry details
-    const enquiry = this.getEnquiryInfo(enquiryId);
+    // Get enquiry details (async)
+    const enquiry = await this.getEnquiryInfo(enquiryId);
     if (!enquiry) {
       throw new NotFoundException(`Enquiry with ID ${enquiryId} not found`);
     }
