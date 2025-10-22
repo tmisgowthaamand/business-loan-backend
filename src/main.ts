@@ -36,9 +36,13 @@ async function bootstrap() {
 
   const port = process.env.PORT || 5002; // Use Render's port or fallback to 5002
   console.log(`🌐 Attempting to start server on port ${port}...`);
-  await app.listen(port);
+  console.log(`📁 Current working directory: ${process.cwd()}`);
+  console.log(`🔧 Node environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  await app.listen(port, '0.0.0.0'); // Bind to all interfaces for Render
   console.log(`🎉 Backend server successfully running on port ${port}`);
   console.log(`📋 API endpoints available at /api/`);
   console.log(`🔧 Supabase endpoints: /api/supabase/ping`);
+  console.log(`🌍 Server accessible at: http://0.0.0.0:${port}`);
 }
 bootstrap();
