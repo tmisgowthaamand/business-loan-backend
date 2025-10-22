@@ -257,6 +257,32 @@ export class EnquiryService {
   async create(createEnquiryDto: CreateEnquiryDto, userId: number = 1) {
     console.log('📝 EnquiryService.create called with:', createEnquiryDto, 'userId:', userId);
     
+    // Validate phone number format (exactly 10 digits)
+    if (!createEnquiryDto.mobile || !/^\d{10}$/.test(createEnquiryDto.mobile)) {
+      throw new Error('Phone number must be exactly 10 digits');
+    }
+    
+    // Check for duplicate phone number
+    const existingByPhone = this.enquiriesStorage.find(enquiry => 
+      enquiry.mobile === createEnquiryDto.mobile
+    );
+    
+    if (existingByPhone) {
+      const clientName = existingByPhone.name || existingByPhone.businessName || 'Unknown Client';
+      throw new Error(`Phone number ${createEnquiryDto.mobile} already exists for client: ${clientName}`);
+    }
+    
+    // Check for duplicate name (case-insensitive)
+    const existingByName = this.enquiriesStorage.find(enquiry => 
+      (enquiry.name && enquiry.name.toLowerCase() === createEnquiryDto.name?.toLowerCase()) ||
+      (enquiry.businessName && enquiry.businessName.toLowerCase() === createEnquiryDto.businessName?.toLowerCase())
+    );
+    
+    if (existingByName) {
+      const existingName = existingByName.name || existingByName.businessName;
+      throw new Error(`Client "${existingName}" already exists with phone number: ${existingByName.mobile}`);
+    }
+    
     const mockEnquiry = {
       id: Math.floor(Math.random() * 9000) + 2000,
       name: createEnquiryDto.name || 'Demo Client',
@@ -326,6 +352,18 @@ export class EnquiryService {
       
       const supabase = createClient(supabaseUrl, supabaseKey);
       
+      // Check for duplicates in Supabase first
+      const { data: existingByPhone } = await supabase
+        .from('Enquiry')
+        .select('id, name, mobile')
+        .eq('mobile', enquiry.mobile)
+        .single();
+      
+      if (existingByPhone) {
+        console.log('⚠️ Phone number already exists in Supabase, skipping sync:', enquiry.mobile);
+        return;
+      }
+      
       // Use the same structure that worked in manual sync
       const supabaseData = {
         id: enquiry.id,
@@ -336,10 +374,10 @@ export class EnquiryService {
         mobile: enquiry.mobile
       };
       
-      // Use upsert to handle both new and existing records
+      // Use insert instead of upsert to prevent duplicates
       const { data, error } = await supabase
         .from('Enquiry')
-        .upsert(supabaseData, { onConflict: 'id' })
+        .insert(supabaseData)
         .select();
       
       if (error) {
