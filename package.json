@@ -21,7 +21,6 @@
     "render:start": "node dist/main.js",
     "init:data": "npx ts-node src/scripts/initialize-data.ts",
     "sync:supabase": "npx ts-node src/scripts/sync-to-supabase.ts",
-    "deploy:setup": "npx ts-node src/scripts/deploy-setup.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
