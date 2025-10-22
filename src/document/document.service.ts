@@ -766,22 +766,18 @@ export class DocumentService {
       });
       
       // Convert back to array and refresh enquiry information
-      const deduplicatedDocuments = await Promise.all(Array.from(uniqueDocuments.values()).map(async doc => {
+      const deduplicatedDocuments = Array.from(uniqueDocuments.values()).map(doc => {
         // Try to get enquiry information from static mapping first
         let realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
         
-        // If not found in static mapping, try to get from enquiry service
-        if (!realEnquiry && this.enquiryService) {
-          try {
-            const enquiryData = await this.enquiryService.findOne(doc.enquiryId);
-            if (enquiryData) {
-              realEnquiry = {
-                name: enquiryData.name || enquiryData.businessName,
-                mobile: enquiryData.mobile
-              };
-            }
-          } catch (error) {
-            console.log('📄 Could not fetch enquiry from service:', error.message);
+        // If not found in static mapping, use a fallback approach
+        if (!realEnquiry) {
+          // Try to extract name from existing document enquiry data
+          if (doc.enquiry && doc.enquiry.name) {
+            realEnquiry = {
+              name: doc.enquiry.name,
+              mobile: doc.enquiry.mobile || '9876543210'
+            };
           }
         }
         
@@ -794,7 +790,7 @@ export class DocumentService {
             businessType: doc.enquiry?.businessType || 'General Business'
           }
         };
-      }));
+      });
       
       // Sort by upload date (newest first)
       const sortedDocuments = deduplicatedDocuments.sort((a, b) => 
