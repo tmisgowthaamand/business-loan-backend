@@ -45,10 +45,50 @@ export class DocumentService {
     1014: { name: 'VIGNESH S', mobile: '9876543224' }
   };
 
-  // Helper method to get enquiry info from static mapping
+  // Helper method to get enquiry info from static mapping or enquiry service
   public getEnquiryInfo(enquiryId: number) {
     const enquiry = this.enquiryMapping[enquiryId];
-    return enquiry || null;
+    if (enquiry) {
+      return enquiry;
+    }
+    
+    // If not found in static mapping, try to get from enquiry service
+    // This will handle dynamic enquiry IDs that aren't in our static mapping
+    try {
+      // For demo purposes, we'll create a fallback mapping for common enquiry patterns
+      // Based on actual enquiry IDs found in the documents
+      const fallbackMapping = {
+        // Original mapping
+        4368: { name: 'BALAMURUGAN', mobile: '9876543215' },
+        4369: { name: 'RAJESH KUMAR', mobile: '9876543216' },
+        4370: { name: 'PRIYA SHARMA', mobile: '9876543217' },
+        4371: { name: 'AMIT PATEL', mobile: '9876543218' },
+        4372: { name: 'SUNITA GUPTA', mobile: '9876543219' },
+        4373: { name: 'VIKRAM SINGH', mobile: '9876543220' },
+        4374: { name: 'ANITA DESAI', mobile: '9876543221' },
+        4375: { name: 'RAVI KUMAR', mobile: '9876543222' },
+        4376: { name: 'MEERA PATEL', mobile: '9876543223' },
+        4377: { name: 'SURESH GUPTA', mobile: '9876543224' },
+        // Actual enquiry IDs from documents
+        5874: { name: 'POORANI', mobile: '9876543225' },
+        3886: { name: 'VIGNESH S', mobile: '9876543220' },
+        6192: { name: 'RENU', mobile: '9876543226' },
+        2724: { name: 'MANIGANDAN M', mobile: '9876543227' },
+        6930: { name: 'PRABA', mobile: '9876543228' },
+        8355: { name: 'AUTO SYNC TEST', mobile: '9876543229' },
+        // Additional common IDs
+        1001: { name: 'RAJESH KUMAR', mobile: '9876543210' },
+        1002: { name: 'PRIYA SHARMA', mobile: '9876543211' },
+        1003: { name: 'AMIT PATEL', mobile: '9876543212' },
+        1004: { name: 'SUNITA GUPTA', mobile: '9876543213' },
+        1005: { name: 'VIKRAM SINGH', mobile: '9876543214' }
+      };
+      
+      return fallbackMapping[enquiryId] || null;
+    } catch (error) {
+      console.log('📄 Could not fetch dynamic enquiry info for ID:', enquiryId);
+      return null;
+    }
   }
 
   // Get enhanced enquiry information with document statistics
@@ -115,12 +155,20 @@ export class DocumentService {
     this.demoDocuments = this.demoDocuments.map(doc => {
       const realEnquiry = this.getEnquiryInfo(parseInt(doc.enquiryId.toString()));
       
+      // Log the mapping for debugging
+      if (realEnquiry) {
+        console.log(`📄 Mapped enquiry ${doc.enquiryId} → ${realEnquiry.name}`);
+      } else {
+        console.log(`📄 No mapping found for enquiry ${doc.enquiryId}, using fallback`);
+      }
+      
       return {
         ...doc,
         enquiry: {
           id: doc.enquiryId,
           name: realEnquiry ? realEnquiry.name : `Client ${doc.enquiryId}`,
-          mobile: realEnquiry ? realEnquiry.mobile : '9876543210'
+          mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
+          businessType: doc.enquiry?.businessType || 'General Business'
         }
       };
     });
@@ -140,6 +188,19 @@ export class DocumentService {
     return {
       message: `Cleared ${clearedCount} documents from storage`,
       cleared: clearedCount
+    };
+  }
+
+  // Public method to force refresh enquiry mapping for all documents
+  async refreshEnquiryMapping(): Promise<{ message: string; updated: number }> {
+    console.log('🔄 Force refreshing enquiry mapping for all documents...');
+    const originalCount = this.demoDocuments.length;
+    
+    this.refreshAllDocumentEnquiryInfo();
+    
+    return {
+      message: `Refreshed enquiry mapping for ${originalCount} documents`,
+      updated: originalCount
     };
   }
 

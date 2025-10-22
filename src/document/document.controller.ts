@@ -93,6 +93,11 @@ export class DocumentController {
     return this.documentService.refreshEnquiryInfo();
   }
 
+  @Post('refresh-enquiry-mapping')
+  refreshEnquiryMapping() {
+    return this.documentService.refreshEnquiryMapping();
+  }
+
   @Delete('enquiry/:enquiryId/clear')
   clearDocumentsForEnquiry(@Param('enquiryId') enquiryId: string) {
     return this.documentService.clearDocumentsForEnquiry(+enquiryId);
