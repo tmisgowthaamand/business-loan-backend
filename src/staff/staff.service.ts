@@ -353,21 +353,29 @@ export class StaffService {
 
   async createStaff(createStaffDto: CreateStaffDto): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
     try {
+      this.logger.log(`👤 Creating new staff member: ${createStaffDto.email} (${createStaffDto.role})`);
+      
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(createStaffDto.email)) {
         throw new Error('Invalid email format. Please provide a valid email address (e.g., user@example.com)');
       }
 
-      // Check if email already exists in Supabase
+      // Check if email already exists in both Supabase and memory
       const { data: existingUsers } = await this.supabaseService.client
         .from('User')
-        .select('id')
+        .select('id, email')
         .eq('email', createStaffDto.email)
         .limit(1);
 
       if (existingUsers && existingUsers.length > 0) {
-        throw new Error('Email already exists. Please use a different email address.');
+        throw new Error('Email already exists in database. Please use a different email address.');
+      }
+
+      // Also check in-memory storage
+      const existingStaff = this.staff.find(s => s.email === createStaffDto.email);
+      if (existingStaff) {
+        throw new Error('Email already exists in system. Please use a different email address.');
       }
 
       // Hash password
@@ -378,7 +386,8 @@ export class StaffService {
       const accessTokenExpiry = new Date();
       accessTokenExpiry.setHours(accessTokenExpiry.getHours() + 24); // 24 hours expiry
 
-      // Insert into Supabase with all fields
+      // Try to insert into Supabase first
+      this.logger.log(`💾 Attempting to create staff in Supabase: ${createStaffDto.email}`);
       const { data: newUser, error } = await this.supabaseService.client
         .from('User')
         .insert([
@@ -398,14 +407,11 @@ export class StaffService {
         .select()
         .single();
 
+      let staffEntity: Omit<StaffEntity, 'password'>;
+      let isSupabaseUser = false;
+
       if (error) {
-        this.logger.warn('Supabase insert failed, falling back to in-memory storage:', error.message);
-        
-        // Check if email already exists in memory
-        const existingStaff = this.staff.find(s => s.email === createStaffDto.email);
-        if (existingStaff) {
-          throw new Error('Email already exists. Please use a different email address.');
-        }
+        this.logger.warn(`⚠️ Supabase insert failed, using in-memory storage: ${error.message}`);
         
         // Create staff in memory as fallback
         const newStaff: StaffEntity = {
@@ -430,27 +436,39 @@ export class StaffService {
         
         // Sync to Supabase staff table in background (non-blocking)
         this.syncStaffToSupabase(newStaff).catch(error => {
-          console.error('❌ Failed to sync staff to Supabase:', error);
+          this.logger.error('❌ Failed to sync staff to Supabase Staff table:', error);
         });
         
-        // Send verification email
-        this.logger.log(`📧 Attempting to send verification email to: ${createStaffDto.email}`);
-        const emailSent = await this.gmailService.sendAccessLink(
-          createStaffDto.email,
-          createStaffDto.name,
-          accessToken,
-          createStaffDto.role
-        );
-        
-        this.logger.log(`✅ Staff created in memory: ${createStaffDto.email} (${createStaffDto.role}) - PENDING VERIFICATION`);
-        this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
-        
         const { password, ...staffWithoutPassword } = newStaff;
-        return { staff: staffWithoutPassword, emailSent };
+        staffEntity = staffWithoutPassword;
+        
+        this.logger.log(`✅ Staff created in memory: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newStaff.id}`);
+      } else {
+        // Successfully created in Supabase
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to StaffEntity format
+        staffEntity = {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role as StaffRole,
+          department: newUser.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: newUser.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          status: StaffStatus.PENDING,
+          hasAccess: false,
+          accessToken,
+          accessTokenExpiry,
+          createdAt: new Date(newUser.createdAt),
+          updatedAt: new Date(newUser.updatedAt || newUser.createdAt),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`✅ Staff created in Supabase: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newUser.id}`);
       }
 
       // Send verification email
-      this.logger.log(`📧 Attempting to send verification email to: ${createStaffDto.email}`);
+      this.logger.log(`📧 Sending verification email to: ${createStaffDto.email}`);
       const emailSent = await this.gmailService.sendAccessLink(
         createStaffDto.email,
         createStaffDto.name,
@@ -458,30 +476,12 @@ export class StaffService {
         createStaffDto.role
       );
 
-      this.logger.log(`✅ Staff created: ${createStaffDto.email} (${createStaffDto.role}) - PENDING VERIFICATION`);
       this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
-
-      // Convert Supabase user to StaffEntity format
-      const staffEntity: Omit<StaffEntity, 'password'> = {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role as StaffRole,
-        department: createStaffDto.department,
-        position: createStaffDto.position,
-        status: StaffStatus.PENDING,
-        hasAccess: false,
-        accessToken,
-        accessTokenExpiry,
-        createdAt: new Date(newUser.createdAt),
-        updatedAt: new Date(newUser.createdAt),
-        createdBy: 'Admin'
-      };
 
       // Create notification for new staff member
       try {
         await this.notificationsService.notifyStaffAdded(
-          newUser.id,
+          staffEntity.id,
           createStaffDto.name,
           createStaffDto.role
         );
@@ -490,82 +490,173 @@ export class StaffService {
         this.logger.error('Failed to send notification for new staff member:', error);
       }
 
+      this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
       return { staff: staffEntity, emailSent };
     } catch (error) {
-      this.logger.error('Error creating staff:', error);
+      this.logger.error('❌ Error creating staff:', error);
       throw error;
     }
   }
 
   async getAllStaff(): Promise<Omit<StaffEntity, 'password'>[]> {
     try {
-      this.logger.log(`🔍 getAllStaff called - Current staff array length: ${this.staff?.length || 0}`);
+      this.logger.log(`🔍 getAllStaff called - Fetching from both Supabase and memory`);
       
-      // Return in-memory staff members (initialized with real staff from screenshot)
+      const allStaff: Omit<StaffEntity, 'password'>[] = [];
+
+      // First, get staff from Supabase
+      try {
+        this.logger.log('📋 Fetching staff from Supabase...');
+        const { data: users, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .order('createdAt', { ascending: false });
+
+        if (!error && users && users.length > 0) {
+          // Convert Supabase users to StaffEntity format
+          const supabaseStaff: Omit<StaffEntity, 'password'>[] = users.map(user => {
+            const isActive = !user.inviteToken;
+            const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+            
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role as StaffRole,
+              department: user.department || (user.role === 'ADMIN' ? 'Administration' : 'General'),
+              position: user.position || (user.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+              status: status,
+              hasAccess: isActive,
+              accessToken: user.inviteToken,
+              accessTokenExpiry: user.tokenExpiry ? new Date(user.tokenExpiry) : undefined,
+              createdAt: new Date(user.createdAt),
+              updatedAt: new Date(user.updatedAt || user.createdAt),
+              createdBy: 'Admin',
+              lastLogin: user.lastLogin ? new Date(user.lastLogin) : (isActive ? new Date() : undefined)
+            };
+          });
+          
+          allStaff.push(...supabaseStaff);
+          this.logger.log(`📋 Found ${supabaseStaff.length} staff members in Supabase`);
+        } else {
+          this.logger.log('📋 No staff found in Supabase or error occurred');
+        }
+      } catch (supabaseError) {
+        this.logger.error('Error fetching from Supabase:', supabaseError);
+      }
+
+      // Then, get staff from in-memory storage (excluding duplicates)
       if (this.staff && this.staff.length > 0) {
-        this.logger.log(`📋 Returning ${this.staff.length} staff members from memory`);
+        this.logger.log(`📋 Checking ${this.staff.length} in-memory staff members...`);
         
-        // Convert to format without password
-        const staffList: Omit<StaffEntity, 'password'>[] = this.staff.map(staff => {
+        const memoryStaff: Omit<StaffEntity, 'password'>[] = this.staff
+          .filter(staff => {
+            // Exclude if already exists in Supabase (by email)
+            const existsInSupabase = allStaff.some(s => s.email === staff.email);
+            return !existsInSupabase;
+          })
+          .map(staff => {
+            const { password, ...staffWithoutPassword } = staff;
+            return staffWithoutPassword;
+          });
+        
+        allStaff.push(...memoryStaff);
+        this.logger.log(`📋 Added ${memoryStaff.length} unique staff members from memory`);
+      }
+
+      // If no staff found anywhere, initialize with default staff
+      if (allStaff.length === 0) {
+        this.logger.log('📋 No staff found anywhere, initializing with default staff...');
+        this.initializeDefaultStaff();
+        
+        // Return the initialized staff (without passwords)
+        const defaultStaff: Omit<StaffEntity, 'password'>[] = this.staff.map(staff => {
           const { password, ...staffWithoutPassword } = staff;
           return staffWithoutPassword;
         });
         
-        return staffList;
+        this.logger.log(`📋 Returning ${defaultStaff.length} default staff members`);
+        return defaultStaff;
       }
 
-      // Fallback: Try Supabase if no in-memory staff
-      this.logger.log('📋 No in-memory staff found, trying Supabase...');
-      const { data: users, error } = await this.supabaseService.client
-        .from('User')
-        .select('*')
-        .neq('email', 'admin@gmail.com')
-        .order('createdAt', { ascending: false });
-
-      if (error || !users || users.length === 0) {
-        this.logger.log('📋 No staff found in Supabase either, returning empty list');
-        return [];
-      }
-
-      // Convert Supabase users to StaffEntity format
-      const staffList: Omit<StaffEntity, 'password'>[] = users.map(user => {
-        const isActive = !user.inviteToken;
-        const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
-        
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role as StaffRole,
-          department: user.department || (user.role === 'ADMIN' ? 'Administration' : 'General'),
-          position: user.position || (user.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
-          status: status,
-          hasAccess: isActive,
-          accessToken: user.inviteToken,
-          accessTokenExpiry: user.tokenExpiry ? new Date(user.tokenExpiry) : undefined,
-          createdAt: new Date(user.createdAt),
-          updatedAt: new Date(user.updatedAt || user.createdAt),
-          createdBy: 'Admin',
-          lastLogin: user.lastLogin ? new Date(user.lastLogin) : (isActive ? new Date() : undefined)
-        };
+      // Sort by creation date (newest first)
+      allStaff.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      this.logger.log(`📋 Returning ${allStaff.length} total staff members (Supabase + Memory)`);
+      
+      // Log staff summary for debugging
+      allStaff.forEach(staff => {
+        this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.status}`);
       });
       
-      this.logger.log(`📋 Returning ${staffList.length} staff members from Supabase`);
-      return staffList;
+      return allStaff;
     } catch (error) {
       this.logger.error('Error in getAllStaff:', error);
+      
+      // Fallback to in-memory staff only
+      if (this.staff && this.staff.length > 0) {
+        this.logger.log('📋 Falling back to in-memory staff only');
+        const fallbackStaff: Omit<StaffEntity, 'password'>[] = this.staff.map(staff => {
+          const { password, ...staffWithoutPassword } = staff;
+          return staffWithoutPassword;
+        });
+        return fallbackStaff;
+      }
+      
       this.logger.log('📋 Returning empty staff list due to error');
       return [];
     }
   }
 
   async getStaffById(id: number): Promise<Omit<StaffEntity, 'password'> | null> {
-    const staff = this.staff.find(s => s.id === id);
-    if (!staff) {
+    try {
+      this.logger.log(`🔍 Looking for staff ID: ${id}`);
+      
+      // First check Supabase
+      const { data: supabaseUser, error } = await this.supabaseService.client
+        .from('User')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (!error && supabaseUser) {
+        this.logger.log(`📋 Found staff in Supabase: ${supabaseUser.name} (${supabaseUser.email})`);
+        
+        const isActive = !supabaseUser.inviteToken;
+        const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+        
+        return {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          status: status,
+          hasAccess: isActive,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          createdBy: 'Admin',
+          lastLogin: supabaseUser.lastLogin ? new Date(supabaseUser.lastLogin) : (isActive ? new Date() : undefined)
+        };
+      }
+
+      // If not found in Supabase, check in-memory storage
+      const staff = this.staff.find(s => s.id === id);
+      if (!staff) {
+        this.logger.log(`❌ Staff ID ${id} not found in Supabase or memory`);
+        return null;
+      }
+      
+      this.logger.log(`📋 Found staff in memory: ${staff.name} (${staff.email})`);
+      const { password, ...staffWithoutPassword } = staff;
+      return staffWithoutPassword;
+    } catch (error) {
+      this.logger.error(`Error finding staff by ID ${id}:`, error);
       return null;
     }
-    const { password, ...staffWithoutPassword } = staff;
-    return staffWithoutPassword;
   }
 
   async updateStaff(id: number, updateStaffDto: UpdateStaffDto): Promise<Omit<StaffEntity, 'password'>> {
@@ -1120,26 +1211,100 @@ export class StaffService {
 
   async resendVerificationEmail(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
     try {
-      // Find staff member
-      const staff = this.staff.find(s => s.id === staffId);
+      this.logger.log(`📧 Attempting to resend verification email for staff ID: ${staffId}`);
+      
+      // First check in-memory staff
+      let staff = this.staff.find(s => s.id === staffId);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
       if (!staff) {
-        throw new NotFoundException('Staff member not found');
+        this.logger.log(`📧 Staff ID ${staffId} not found in memory, checking Supabase...`);
+        
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('id', staffId)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for staff:', error);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          this.logger.error(`Staff member with ID ${staffId} not found in Supabase either`);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: supabaseUser.inviteToken ? StaffStatus.PENDING : StaffStatus.ACTIVE,
+          hasAccess: !supabaseUser.inviteToken,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`📧 Found staff in Supabase: ${staff.name} (${staff.email})`);
       }
 
       // Check if already verified
-      if (staff.status === StaffStatus.ACTIVE) {
+      if (staff.status === StaffStatus.ACTIVE && !staff.accessToken) {
         throw new Error('Staff member is already verified and active');
       }
 
-      // Generate new access token if expired or missing
-      if (!staff.accessToken || (staff.accessTokenExpiry && staff.accessTokenExpiry < new Date())) {
-        staff.accessToken = this.generateAccessToken();
-        staff.accessTokenExpiry = new Date();
-        staff.accessTokenExpiry.setHours(staff.accessTokenExpiry.getHours() + 24); // 24 hours expiry
+      // Generate new access token
+      const newAccessToken = this.generateAccessToken();
+      const newAccessTokenExpiry = new Date();
+      newAccessTokenExpiry.setHours(newAccessTokenExpiry.getHours() + 24); // 24 hours expiry
+
+      if (isSupabaseUser) {
+        // Update Supabase user with new token
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: newAccessToken,
+            tokenExpiry: newAccessTokenExpiry.toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', staffId);
+
+        if (updateError) {
+          this.logger.error('Error updating Supabase user token:', updateError);
+          throw new Error('Failed to update verification token');
+        }
+
+        // Update local staff object for email sending
+        staff.accessToken = newAccessToken;
+        staff.accessTokenExpiry = newAccessTokenExpiry;
         staff.updatedAt = new Date();
+        
+        this.logger.log(`📧 Updated Supabase user ${staff.email} with new verification token`);
+      } else {
+        // Update in-memory staff
+        staff.accessToken = newAccessToken;
+        staff.accessTokenExpiry = newAccessTokenExpiry;
+        staff.updatedAt = new Date();
+        this.saveStaffToFile(); // Save to persistent storage
+        
+        this.logger.log(`📧 Updated in-memory staff ${staff.email} with new verification token`);
       }
 
       // Send verification email
+      this.logger.log(`📧 Sending verification email to: ${staff.email}`);
       const emailSent = await this.gmailService.sendAccessLink(
         staff.email,
         staff.name,
@@ -1147,13 +1312,13 @@ export class StaffService {
         staff.role
       );
 
-      this.logger.log(`Verification email ${emailSent ? 'sent successfully' : 'failed to send'} to ${staff.email}`);
+      this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to ${staff.email}`);
 
       // Return staff without password
       const { password, ...staffWithoutPassword } = staff;
       return { staff: staffWithoutPassword, emailSent };
     } catch (error) {
-      this.logger.error('Error resending verification email:', error);
+      this.logger.error('❌ Error resending verification email:', error);
       throw error;
     }
   }

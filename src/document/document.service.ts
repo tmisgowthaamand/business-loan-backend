@@ -721,6 +721,7 @@ export class DocumentService {
       // Auto-sync to Supabase database (enhanced with retry logic)
       try {
         await this.autoSyncDocumentToSupabaseWithRetry(mockDocument);
+        console.log('✅ Document synced to Supabase database successfully');
       } catch (error) {
         console.error('❌ Auto-sync to Supabase failed after retries (continuing with local storage):', error);
       }
@@ -1181,34 +1182,84 @@ startxref
     }
   }
 
-  async remove(id: number, userId: number) {
-    try {
-      // Remove document from demo storage
-      const documentIndex = this.demoDocuments.findIndex(doc => doc.id === id);
-      if (documentIndex !== -1) {
-        const removedDoc = this.demoDocuments[documentIndex];
-        this.demoDocuments.splice(documentIndex, 1);
+  async remove(id: number, userId?: number): Promise<{ message: string }> {
+    const documentIndex = this.demoDocuments.findIndex(doc => doc.id === id);
+    if (documentIndex === -1) {
+      throw new NotFoundException(`Document with ID ${id} not found`);
+    }
+
+    const document = this.demoDocuments[documentIndex];
+    console.log('🗑️ Deleting document:', document.fileName, 'ID:', id);
+
+    // Delete from Supabase storage if it exists there
+    if (document.supabaseUrl && document.storageType === 'supabase') {
+      try {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabaseStorageUrl = 'https://vxtpjsymbcirszksrafg.supabase.co';
+        const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTczNjQ2MCwiZXhwIjoyMDc1MzEyNDYwfQ.C-suBHNAinO-Uj8-Hn-_Ky_Ky9Uj8-Hn-_Ky_Ky9Uj8-Hn';
         
-        // Also remove the physical file if it exists
-        if (removedDoc.filePath && fs.existsSync(removedDoc.filePath)) {
-          try {
-            fs.unlinkSync(removedDoc.filePath);
-            console.log('📄 Physical file removed:', removedDoc.filePath);
-          } catch (fileError) {
-            console.log('📄 Could not remove physical file:', fileError);
+        const supabase = createClient(supabaseStorageUrl, supabaseServiceKey, {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        });
+
+        // Extract file path from Supabase URL
+        const urlParts = document.supabaseUrl.split('/documents/');
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1];
+          console.log('🗑️ Deleting from Supabase storage:', filePath);
+          
+          const { error: deleteError } = await supabase.storage
+            .from('documents')
+            .remove([filePath]);
+          
+          if (deleteError) {
+            console.error('❌ Error deleting from Supabase storage:', deleteError);
+          } else {
+            console.log('✅ Successfully deleted from Supabase storage');
           }
         }
-        
-        // Save changes to file
-        this.saveDocuments();
-        console.log('📄 Document removed from demo storage and saved to file');
+      } catch (error) {
+        console.error('❌ Error deleting from Supabase storage:', error);
       }
-      
-      return { message: 'Document deleted successfully' };
-    } catch (error) {
-      console.log('📄 Error removing document');
-      return { message: 'Document deleted successfully' };
     }
+
+    // Delete local file if it exists
+    if (document.filePath && fs.existsSync(document.filePath)) {
+      try {
+        fs.unlinkSync(document.filePath);
+        console.log('✅ Deleted local file:', document.filePath);
+      } catch (error) {
+        console.error('❌ Error deleting local file:', error);
+      }
+    }
+
+    // Delete from Supabase database
+    try {
+      if (this.supabaseService) {
+        const { error } = await this.supabaseService.client
+          .from('documents')
+          .delete()
+          .eq('id', id);
+        
+        if (error) {
+          console.error('❌ Error deleting from Supabase database:', error);
+        } else {
+          console.log('✅ Successfully deleted from Supabase database');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error deleting from Supabase database:', error);
+    }
+
+    // Remove from local storage
+    this.demoDocuments.splice(documentIndex, 1);
+    this.saveDocuments();
+    
+    console.log('✅ Document deletion completed');
+    return { message: 'Document deleted successfully' };
   }
 
   // Method to clear Supabase and sync all current localhost documents
