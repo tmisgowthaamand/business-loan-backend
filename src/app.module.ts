@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service';
+import { AppService } from './app.service';
 import { CommonModule } from './common/common.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { HealthModule } from './health/health.module';
@@ -38,6 +39,6 @@ import { TransactionModule } from './transaction/transaction.module';
     TransactionModule,
     SupabaseModule, // Moved to end to avoid dependency issues
   ],
-  providers: [PrismaService],
+  providers: [PrismaService, AppService],
 })
 export class AppModule {}
