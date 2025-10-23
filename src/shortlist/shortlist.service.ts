@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EnquiryService } from '../enquiry/enquiry.service';
 import { CreateShortlistDto, UpdateShortlistDto } from './dto';
@@ -24,6 +25,7 @@ export class ShortlistService {
   constructor(
     private prisma: PrismaService,
     @Optional() private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
     @Inject(forwardRef(() => EnquiryService))
@@ -82,8 +84,11 @@ export class ShortlistService {
       };
     }
 
+    // Generate 1-2 digit ID using ID generator service
+    const shortlistId = await this.idGeneratorService.generateShortlistId();
+    
     const mockShortlist = {
-      id: Math.floor(Math.random() * 9000) + 1000,
+      id: shortlistId,
       enquiryId: createShortlistDto.enquiryId || null,
       name: name,
       mobile: mobile,

@@ -5,10 +5,13 @@ import {
   forwardRef,
   Inject,
   Optional,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PersistenceService } from '../common/services/persistence.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { EnquiryService } from '../enquiry/enquiry.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateDocumentDto, UpdateDocumentDto } from './dto';
@@ -19,30 +22,37 @@ import * as path from 'path';
 
 @Injectable()
 export class DocumentService {
+  private readonly logger = new Logger(DocumentService.name);
+  
   // File-based storage for demo mode
   private readonly dataDir = path.join(process.cwd(), 'data');
   private readonly documentsFile = path.join(this.dataDir, 'documents.json');
+  private readonly uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
   private demoDocuments: any[] = [];
+  
+  // Supabase Storage configuration
+  private readonly SUPABASE_BUCKET = 'documents';
+  private readonly isProduction = process.env.NODE_ENV === 'production';
+  private readonly isRender = process.env.RENDER === 'true';
+  private readonly isVercel = process.env.VERCEL === '1';
 
-  // Static enquiry mapping to avoid circular dependency - Updated with all current clients
+  // Static enquiry mapping to avoid circular dependency - Updated with 1-2 digit IDs
   private readonly enquiryMapping = {
-    9570: { name: 'BALAMURUGAN', mobile: '9876543215' },
-    1001: { name: 'Rajesh Kumar', mobile: '9876543210' },
-    1002: { name: 'Priya Sharma', mobile: '9876543211' },
-    1003: { name: 'Amit Patel', mobile: '9876543212' },
-    1004: { name: 'Sunita Gupta', mobile: '9876543213' },
-    1005: { name: 'Vikram Singh', mobile: '9876543214' },
-    6192: { name: 'Renu', mobile: '9876543210' },
-    3886: { name: 'VIGNESH S', mobile: '9876543220' },
-    1006: { name: 'SUJATA GUPTA', mobile: '9876543216' },
-    1007: { name: 'AMIT PATEL', mobile: '9876543217' },
-    1008: { name: 'PRIYA SHARMA', mobile: '9876543218' },
-    1009: { name: 'RAJESH KUMAR', mobile: '9876543219' },
-    1010: { name: 'BALAMURUGAN', mobile: '9876543220' },
-    1011: { name: 'Hari', mobile: '9876543221' },
-    1012: { name: 'John Doe', mobile: '9876543222' },
-    1013: { name: 'Auto Sync Test', mobile: '9876543223' },
-    1014: { name: 'VIGNESH S', mobile: '9876543224' }
+    1: { name: 'BALAMURUGAN', mobile: '9876543215' },
+    2: { name: 'Rajesh Kumar', mobile: '9876543210' },
+    3: { name: 'Priya Sharma', mobile: '9876543211' },
+    4: { name: 'Amit Patel', mobile: '9876543212' },
+    5: { name: 'Sunita Gupta', mobile: '9876543213' },
+    6: { name: 'Vikram Singh', mobile: '9876543214' },
+    7: { name: 'Renu', mobile: '9876543210' },
+    8: { name: 'BALAMURUGAN', mobile: '9876543215' },
+    9: { name: 'VIGNESH S', mobile: '9876543220' },
+    10: { name: 'SUJATA GUPTA', mobile: '9876543216' },
+    11: { name: 'AMIT PATEL', mobile: '9876543217' },
+    12: { name: 'PRIYA SHARMA', mobile: '9876543218' },
+    13: { name: 'RAJESH KUMAR', mobile: '9876543219' },
+    14: { name: 'Hari', mobile: '9876543221' },
+    15: { name: 'John Doe', mobile: '9876543222' }
   };
 
   // Helper method to get enquiry info from enquiry service or static mapping fallback
@@ -138,20 +148,92 @@ export class DocumentService {
     private prisma: PrismaService, 
     private config: ConfigService,
     @Optional() private supabaseService: SupabaseService,
+    private persistenceService: PersistenceService,
+    private idGeneratorService: IdGeneratorService,
     @Optional() @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
     @Optional() @Inject(forwardRef(() => EnquiryService))
     private enquiryService: EnquiryService,
   ) {
-    this.loadDocuments();
+    this.initializeService();
+  }
+
+  private async initializeService() {
+    this.logger.log('🚀 Initializing Document Service...');
+    this.logger.log(`🌐 Environment: ${this.isProduction ? 'Production' : 'Development'}`);
+    this.logger.log(`🚀 Platform: ${this.isRender ? 'Render' : this.isVercel ? 'Vercel' : 'Local'}`);
+    
+    // Ensure directories exist
+    this.ensureDirectories();
+    
+    // Initialize Supabase Storage bucket
+    await this.initializeSupabaseStorage();
+    
+    // Load existing documents
+    await this.loadDocuments();
+  }
+
+  private ensureDirectories() {
+    try {
+      if (!this.isVercel) { // Vercel has read-only file system
+        if (!fs.existsSync(this.dataDir)) {
+          fs.mkdirSync(this.dataDir, { recursive: true });
+        }
+        if (!fs.existsSync(this.uploadsDir)) {
+          fs.mkdirSync(this.uploadsDir, { recursive: true });
+        }
+      }
+    } catch (error) {
+      this.logger.warn('⚠️ Could not create directories (read-only filesystem):', error.message);
+    }
+  }
+
+  private async initializeSupabaseStorage() {
+    if (!this.supabaseService) {
+      this.logger.warn('⚠️ Supabase service not available, using local storage only');
+      return;
+    }
+
+    try {
+      // Check if documents bucket exists, create if not
+      const { data: buckets, error: listError } = await this.supabaseService.client.storage.listBuckets();
+      
+      if (listError) {
+        this.logger.error('❌ Failed to list Supabase buckets:', listError);
+        return;
+      }
+
+      const documentsBucket = buckets?.find(bucket => bucket.name === this.SUPABASE_BUCKET);
+      
+      if (!documentsBucket) {
+        this.logger.log('📁 Creating documents bucket in Supabase Storage...');
+        const { error: createError } = await this.supabaseService.client.storage.createBucket(this.SUPABASE_BUCKET, {
+          public: false,
+          allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'],
+          fileSizeLimit: 10485760, // 10MB
+        });
+
+        if (createError) {
+          this.logger.error('❌ Failed to create documents bucket:', createError);
+        } else {
+          this.logger.log('✅ Documents bucket created successfully');
+        }
+      } else {
+        this.logger.log('✅ Documents bucket already exists');
+      }
+    } catch (error) {
+      this.logger.error('❌ Error initializing Supabase Storage:', error);
+    }
   }
 
   private async loadDocuments() {
     try {
-      if (fs.existsSync(this.documentsFile)) {
-        const data = fs.readFileSync(this.documentsFile, 'utf8');
-        this.demoDocuments = JSON.parse(data);
-        console.log('📄 Loaded', this.demoDocuments.length, 'documents from file');
+      // Use persistence service for production-ready loading
+      const documents = await this.persistenceService.loadData('documents', []);
+      
+      if (documents && documents.length > 0) {
+        this.demoDocuments = documents;
+        this.logger.log(`📄 Loaded ${this.demoDocuments.length} documents from persistence service`);
         
         // Refresh enquiry information for all loaded documents (async)
         await this.refreshAllDocumentEnquiryInfo();
@@ -531,15 +613,107 @@ export class DocumentService {
     }
   }
 
-  private saveDocuments() {
+  // Supabase Storage Integration Methods
+  private async uploadToSupabaseStorage(
+    file: Express.Multer.File,
+    enquiryId: number,
+    documentType: string,
+    enquiryName: string
+  ): Promise<{ success: boolean; filePath?: string; publicUrl?: string; error?: string }> {
+    if (!this.supabaseService) {
+      return { success: false, error: 'Supabase service not available' };
+    }
+
     try {
-      if (!fs.existsSync(this.dataDir)) {
-        fs.mkdirSync(this.dataDir, { recursive: true });
+      // Create organized file path: enquiry-{id}-{name}/{documentType}/{timestamp}-{originalname}
+      const sanitizedName = enquiryName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+      const timestamp = Date.now();
+      const fileExtension = path.extname(file.originalname);
+      const fileName = `${timestamp}-${documentType}${fileExtension}`;
+      const filePath = `enquiry-${enquiryId}-${sanitizedName}/${documentType}/${fileName}`;
+
+      this.logger.log(`📁 Uploading to Supabase Storage: ${filePath}`);
+
+      // Upload file to Supabase Storage
+      const { data, error } = await this.supabaseService.client.storage
+        .from(this.SUPABASE_BUCKET)
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false, // Don't overwrite existing files
+        });
+
+      if (error) {
+        this.logger.error('❌ Supabase Storage upload failed:', error);
+        return { success: false, error: error.message };
       }
-      fs.writeFileSync(this.documentsFile, JSON.stringify(this.demoDocuments, null, 2));
-      console.log('💾 Saved', this.demoDocuments.length, 'documents to file');
+
+      // Get public URL for the uploaded file
+      const { data: urlData } = this.supabaseService.client.storage
+        .from(this.SUPABASE_BUCKET)
+        .getPublicUrl(filePath);
+
+      this.logger.log(`✅ File uploaded to Supabase Storage: ${filePath}`);
+      
+      return {
+        success: true,
+        filePath: data.path,
+        publicUrl: urlData.publicUrl,
+      };
     } catch (error) {
-      console.error('❌ Error saving documents:', error);
+      this.logger.error('❌ Error uploading to Supabase Storage:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async deleteFromSupabaseStorage(filePath: string): Promise<boolean> {
+    if (!this.supabaseService || !filePath) {
+      return false;
+    }
+
+    try {
+      this.logger.log(`🗑️ Deleting from Supabase Storage: ${filePath}`);
+
+      const { error } = await this.supabaseService.client.storage
+        .from(this.SUPABASE_BUCKET)
+        .remove([filePath]);
+
+      if (error) {
+        this.logger.error('❌ Failed to delete from Supabase Storage:', error);
+        return false;
+      }
+
+      this.logger.log(`✅ File deleted from Supabase Storage: ${filePath}`);
+      return true;
+    } catch (error) {
+      this.logger.error('❌ Error deleting from Supabase Storage:', error);
+      return false;
+    }
+  }
+
+  private async getSupabaseStorageUrl(filePath: string): Promise<string | null> {
+    if (!this.supabaseService || !filePath) {
+      return null;
+    }
+
+    try {
+      const { data } = this.supabaseService.client.storage
+        .from(this.SUPABASE_BUCKET)
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      this.logger.error('❌ Error getting Supabase Storage URL:', error);
+      return null;
+    }
+  }
+
+  private async saveDocuments() {
+    try {
+      // Use persistence service for production-ready saving
+      await this.persistenceService.saveData('documents', this.demoDocuments);
+      this.logger.log(`💾 Saved ${this.demoDocuments.length} documents via persistence service`);
+    } catch (error) {
+      this.logger.error('❌ Error saving documents:', error);
     }
   }
 
@@ -610,111 +784,88 @@ export class DocumentService {
         }
       }
 
-      // Upload to Supabase Storage bucket "documents"
-      let supabaseUrl = null;
+      // Get enquiry info for organized storage
+      const enquiryInfo = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
+      const clientName = enquiryInfo?.name || 'Unknown Client';
+      
+      // Upload to Supabase Storage first
+      let supabaseResult = null;
       let localFilePath = null;
-      let supabaseFilePath = null;
       
       try {
-        // Get enquiry info for client name (now async)
-        const enquiryInfo = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
-        const clientName = enquiryInfo?.name || 'Unknown Client';
-        const clientFolder = clientName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        this.logger.log(`📁 Uploading document for ${clientName} (Enquiry: ${createDocumentDto.enquiryId})`);
         
-        // Generate unique filename organized by client name
-        const timestamp = Date.now();
-        const fileExtension = path.extname(file.originalname);
-        const uniqueFileName = `${clientFolder}/${createDocumentDto.type}/${timestamp}-${file.originalname}`;
-        supabaseFilePath = uniqueFileName; // Store for later use
+        // Upload to Supabase Storage using the new method
+        supabaseResult = await this.uploadToSupabaseStorage(
+          file,
+          parseInt(createDocumentDto.enquiryId.toString()),
+          createDocumentDto.type,
+          clientName
+        );
         
-        console.log('📄 Organizing document for client:', clientName, '→', uniqueFileName);
-        
-        // Upload to Supabase Storage with service key to bypass RLS
-        const { createClient } = require('@supabase/supabase-js');
-        const supabaseStorageUrl = 'https://vxtpjsymbcirszksrafg.supabase.co';
-        const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTczNjQ2MCwiZXhwIjoyMDc1MzEyNDYwfQ.C-suBHNAinO-Uj8-Hn-_Ky_Ky9Uj8-Hn-_Ky_Ky9Uj8-Hn';
-        
-        const supabase = createClient(supabaseStorageUrl, supabaseServiceKey, {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
-          }
-        });
-        
-        console.log('📄 Uploading to Supabase storage bucket "documents":', uniqueFileName);
-        
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(uniqueFileName, file.buffer, {
-            contentType: file.mimetype,
-            duplex: 'half'
-          });
-        
-        if (uploadError) {
-          console.error('❌ Supabase storage upload error:', uploadError);
-          throw new Error(`Supabase upload failed: ${uploadError.message}`);
+        if (supabaseResult.success) {
+          this.logger.log(`✅ Document uploaded to Supabase Storage: ${supabaseResult.filePath}`);
+        } else {
+          this.logger.warn(`⚠️ Supabase Storage upload failed: ${supabaseResult.error}`);
         }
-        
-        // Get public URL for the uploaded file
-        const { data: urlData } = supabase.storage
-          .from('documents')
-          .getPublicUrl(uniqueFileName);
-        
-        supabaseUrl = urlData.publicUrl;
-        console.log('✅ Successfully uploaded to Supabase storage:', supabaseUrl);
         
       } catch (supabaseError) {
-        console.error('❌ Supabase storage error, falling back to local storage:', supabaseError);
-        
-        // Fallback to local storage if Supabase fails
-        const uploadsDir = path.join(process.cwd(), 'uploads', 'documents');
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
+        this.logger.error('❌ Supabase storage error, falling back to local storage:', supabaseError);
+      }
+      
+      // Fallback to local storage if needed (for development or if Supabase fails)
+      if (!supabaseResult?.success && !this.isVercel) {
+        try {
+          if (!fs.existsSync(this.uploadsDir)) {
+            fs.mkdirSync(this.uploadsDir, { recursive: true });
+          }
+          
+          const timestamp = Date.now();
+          const fileExtension = path.extname(file.originalname);
+          const uniqueFileName = `${timestamp}-${createDocumentDto.enquiryId}-${createDocumentDto.type}${fileExtension}`;
+          localFilePath = path.join(this.uploadsDir, uniqueFileName);
+          
+          // Save file to disk as fallback
+          fs.writeFileSync(localFilePath, file.buffer);
+          this.logger.log('📄 Saved to local storage as fallback:', localFilePath);
+        } catch (localError) {
+          this.logger.error('❌ Local storage also failed:', localError);
         }
-        
-        const timestamp = Date.now();
-        const fileExtension = path.extname(file.originalname);
-        const uniqueFileName = `${timestamp}-${createDocumentDto.enquiryId}-${createDocumentDto.type}${fileExtension}`;
-        localFilePath = path.join(uploadsDir, uniqueFileName);
-        
-        // Save file to disk as fallback
-        fs.writeFileSync(localFilePath, file.buffer);
-        console.log('📄 Saved to local storage as fallback:', localFilePath);
       }
       
       // Get real enquiry data (reuse the enquiry info we already fetched)
       const realEnquiry = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
       
-      // Create document record with Supabase storage URL
-      const documentId = Math.floor(Math.random() * 9000) + 1000; // Generate ID between 1000-9999
+      // Create document record with enhanced Supabase integration
+      const documentId = await this.idGeneratorService.generateDocumentId(); // Generate 1-2 digit ID
       const mockDocument = {
         id: documentId,
         fileName: file.originalname,
         documentType: createDocumentDto.type,
         type: createDocumentDto.type, // Add both for compatibility
         filePath: localFilePath, // Store local file path as fallback
-        supabaseUrl: supabaseUrl, // Store Supabase storage URL
-        url: supabaseUrl || `http://localhost:5002/api/documents/${documentId}/view`,
-        s3Url: supabaseUrl || `http://localhost:5002/api/documents/${documentId}/view`, // Use Supabase URL or fallback
+        supabaseUrl: supabaseResult?.publicUrl, // Store Supabase storage URL
+        url: supabaseResult?.publicUrl || `http://localhost:5002/api/documents/${documentId}/view`,
+        s3Url: supabaseResult?.publicUrl || `http://localhost:5002/api/documents/${documentId}/view`, // Use Supabase URL or fallback
         status: 'PENDING',
         verified: false, // Add verified field
         uploadedAt: new Date(),
         enquiryId: createDocumentDto.enquiryId,
-        storageType: supabaseUrl ? 'supabase' : 'local', // Track storage type
-        supabaseFilePath: supabaseFilePath, // Store for cleanup
+        storageType: supabaseResult?.success ? 'supabase' : 'local', // Track storage type
+        supabaseFilePath: supabaseResult?.filePath, // Store for cleanup
         supabaseSynced: false, // Will be updated after database sync
         supabaseSyncedAt: null, // Will be set when synced
-        supabaseError: null, // Will be set if sync fails
+        supabaseError: supabaseResult?.success ? null : supabaseResult?.error, // Store any error
         uploadedBy: {
           id: userId,
           name: assignedStaff || 'Demo User'
         },
         enquiry: {
           id: createDocumentDto.enquiryId,
-          name: realEnquiry ? realEnquiry.name : `Client ${createDocumentDto.enquiryId}`,
-          mobile: realEnquiry ? realEnquiry.mobile : '9876543210',
-          businessType: realEnquiry ? realEnquiry.businessType : 'General Business',
-          businessName: realEnquiry ? realEnquiry.businessName : realEnquiry?.name || `Business ${createDocumentDto.enquiryId}`
+          name: enquiryInfo ? enquiryInfo.name : `Client ${createDocumentDto.enquiryId}`,
+          mobile: enquiryInfo ? enquiryInfo.mobile : '9876543210',
+          businessType: enquiryInfo ? enquiryInfo.businessType : 'General Business',
+          businessName: enquiryInfo ? enquiryInfo.businessName : enquiryInfo?.name || `Business ${createDocumentDto.enquiryId}`
         }
       };
 
@@ -738,23 +889,43 @@ export class DocumentService {
         mockDocument.supabaseError = error.message;
       }
 
-      // Create notification for document upload
+      // Create enhanced notification for document upload
       try {
         if (this.notificationsService) {
-          await this.notificationsService.notifyDocumentUploaded(
-            mockDocument.id,
-            realEnquiry ? realEnquiry.name : `Client ${createDocumentDto.enquiryId}`,
-            createDocumentDto.type
-          );
-          console.log('🔔 Notification created for document upload:', createDocumentDto.type);
+          const clientName = enquiryInfo ? enquiryInfo.name : `Client ${createDocumentDto.enquiryId}`;
+          const currentTime = new Date().toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZone: 'Asia/Kolkata'
+          });
+          
+          await this.notificationsService.createSystemNotification({
+            type: 'DOCUMENT_UPLOADED',
+            title: 'Document Uploaded',
+            message: `${createDocumentDto.type} document uploaded by ${clientName} at ${currentTime} - awaiting verification`,
+            priority: 'MEDIUM',
+            data: {
+              documentId: mockDocument.id,
+              clientName: clientName,
+              documentType: createDocumentDto.type,
+              enquiryId: createDocumentDto.enquiryId,
+              fileName: file.originalname,
+              fileSize: file.size,
+              uploadedAt: new Date().toISOString(),
+              uploadedBy: userId,
+              storageType: supabaseResult?.success ? 'supabase' : 'local'
+            }
+          });
+          this.logger.log('🔔 Enhanced upload notification created:', createDocumentDto.type, 'for', clientName);
         }
       } catch (error) {
-        console.error('❌ Failed to create notification:', error);
+        this.logger.error('❌ Failed to create notification:', error);
       }
 
-      // Add to local storage
+      // Add to local storage and save
       this.demoDocuments.push(mockDocument);
-      this.saveDocuments();
+      await this.saveDocuments();
 
       return {
         message: 'Document uploaded successfully',
@@ -1128,19 +1299,54 @@ startxref
         console.log('📄 Document verification updated in demo storage and saved to file');
       }
 
-      // Create notification for document verification
+      // Create enhanced notification for document verification
       try {
         const document = this.demoDocuments[documentIndex];
-        if (document && verified && this.notificationsService) {
-          await this.notificationsService.notifyDocumentVerified(
-            id,
-            document.enquiry?.name || `Client ${document.enquiryId}`,
-            document.type
-          );
-          console.log('🔔 Notification created for document verification:', document.type);
+        if (document && this.notificationsService) {
+          const clientName = document.enquiry?.name || `Client ${document.enquiryId}`;
+          const currentTime = new Date().toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZone: 'Asia/Kolkata'
+          });
+          
+          if (verified) {
+            await this.notificationsService.createSystemNotification({
+              type: 'DOCUMENT_VERIFIED',
+              title: 'Document Verified',
+              message: `${document.type} document verified for ${clientName} at ${currentTime} - ready for next step`,
+              priority: 'MEDIUM',
+              data: {
+                documentId: id,
+                clientName: clientName,
+                documentType: document.type,
+                enquiryId: document.enquiryId,
+                verifiedAt: new Date().toISOString(),
+                verifiedBy: userId
+              }
+            });
+            this.logger.log('🔔 Enhanced verification notification created:', document.type, 'for', clientName);
+          } else {
+            await this.notificationsService.createSystemNotification({
+              type: 'DOCUMENT_VERIFIED',
+              title: 'Document Unverified',
+              message: `${document.type} document unverified for ${clientName} at ${currentTime} - requires attention`,
+              priority: 'HIGH',
+              data: {
+                documentId: id,
+                clientName: clientName,
+                documentType: document.type,
+                enquiryId: document.enquiryId,
+                unverifiedAt: new Date().toISOString(),
+                unverifiedBy: userId
+              }
+            });
+            this.logger.log('🔔 Enhanced unverification notification created:', document.type, 'for', clientName);
+          }
         }
       } catch (error) {
-        console.error('❌ Failed to create document verification notification:', error);
+        this.logger.error('❌ Failed to create document verification notification:', error);
       }
 
       return { message: 'Document verification updated successfully' };
@@ -1218,41 +1424,17 @@ startxref
     };
 
     // 1. Delete from Supabase storage if it exists there
-    if (document.supabaseUrl && document.storageType === 'supabase') {
+    if (document.supabaseFilePath && document.storageType === 'supabase') {
       try {
-        const { createClient } = require('@supabase/supabase-js');
-        const supabaseStorageUrl = 'https://vxtpjsymbcirszksrafg.supabase.co';
-        const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTczNjQ2MCwiZXhwIjoyMDc1MzEyNDYwfQ.C-suBHNAinO-Uj8-Hn-_Ky_Ky9Uj8-Hn-_Ky_Ky9Uj8-Hn';
+        this.logger.log(`🗑️ Deleting from Supabase Storage: ${document.supabaseFilePath}`);
         
-        const supabase = createClient(supabaseStorageUrl, supabaseServiceKey, {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
-          }
-        });
-
-        // Use stored file path or extract from URL
-        let filePath = document.supabaseFilePath;
-        if (!filePath && document.supabaseUrl) {
-          const urlParts = document.supabaseUrl.split('/documents/');
-          if (urlParts.length > 1) {
-            filePath = urlParts[1];
-          }
-        }
+        const deleteSuccess = await this.deleteFromSupabaseStorage(document.supabaseFilePath);
+        cleanupResults.supabaseStorage = deleteSuccess;
         
-        if (filePath) {
-          console.log('🗑️ Deleting from Supabase storage:', filePath);
-          
-          const { error: deleteError } = await supabase.storage
-            .from('documents')
-            .remove([filePath]);
-          
-          if (deleteError) {
-            console.error('❌ Error deleting from Supabase storage:', deleteError);
-          } else {
-            console.log('✅ Successfully deleted from Supabase storage');
-            cleanupResults.supabaseStorage = true;
-          }
+        if (deleteSuccess) {
+          this.logger.log('✅ Successfully deleted from Supabase Storage');
+        } else {
+          this.logger.warn('⚠️ Failed to delete from Supabase Storage');
         }
       } catch (error) {
         console.error('❌ Error deleting from Supabase storage:', error);

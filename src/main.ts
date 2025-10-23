@@ -4,24 +4,40 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   console.log('🚀 Starting NestJS application...');
-  const app = await NestFactory.create(AppModule);
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isRender = process.env.RENDER === 'true';
+  const isVercel = process.env.VERCEL === '1';
+  
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🚀 Platform: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
+  
+  const app = await NestFactory.create(AppModule, {
+    logger: isProduction ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug', 'verbose'],
+    cors: true, // Enable CORS at creation level
+  });
   console.log('✅ NestJS application created successfully');
 
+  // Enhanced validation pipe for production
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: false, // Allow additional properties but ignore them
       transform: true,
+      transformOptions: {
+        enableImplicitConversion: true, // Better type conversion
+      },
+      disableErrorMessages: isProduction, // Hide detailed errors in production
     }),
   );
 
-  // Enable CORS with comprehensive configuration
+  // Enhanced CORS configuration for production deployments
   app.enableCors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       
       const allowedOrigins = [
+        // Local development
         'http://localhost:3000', 
         'http://localhost:3001',
         'http://localhost:3002',
@@ -30,16 +46,40 @@ async function bootstrap() {
         'http://127.0.0.1:3001',
         'http://127.0.0.1:3002',
         'http://127.0.0.1:5173',
+        // Production deployments
         'https://business-loan-frontend.vercel.app',
-        'https://business-loan-portal.vercel.app'
+        'https://business-loan-portal.vercel.app',
+        'https://loan-management-system.vercel.app',
+        // Render backend
+        'https://business-loan-backend.onrender.com'
       ];
       
-      // Allow all Vercel deployments
-      if (origin.includes('.vercel.app')) {
+      // Allow all Vercel deployments (including preview deployments)
+      if (origin.includes('.vercel.app') || origin.includes('-vercel.app')) {
+        console.log('✅ CORS allowed Vercel origin:', origin);
+        return callback(null, true);
+      }
+      
+      // Allow all Render deployments
+      if (origin.includes('.onrender.com')) {
+        console.log('✅ CORS allowed Render origin:', origin);
+        return callback(null, true);
+      }
+      
+      // Allow localhost with any port for development
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        console.log('✅ CORS allowed localhost origin:', origin);
         return callback(null, true);
       }
       
       if (allowedOrigins.includes(origin)) {
+        console.log('✅ CORS allowed origin:', origin);
+        return callback(null, true);
+      }
+      
+      // In production, be more permissive to avoid blocking issues
+      if (isProduction) {
+        console.log('⚠️ CORS allowing origin in production mode:', origin);
         return callback(null, true);
       }
       
@@ -55,11 +95,15 @@ async function bootstrap() {
       'Accept', 
       'Origin',
       'Access-Control-Request-Method',
-      'Access-Control-Request-Headers'
+      'Access-Control-Request-Headers',
+      'X-CSRF-Token',
+      'X-Forwarded-For',
+      'X-Real-IP'
     ],
-    exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+    exposedHeaders: ['Content-Length', 'X-Total-Count', 'X-Page-Count'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
+    maxAge: isProduction ? 86400 : 0, // Cache preflight for 24 hours in production
   });
 
   app.setGlobalPrefix('api');

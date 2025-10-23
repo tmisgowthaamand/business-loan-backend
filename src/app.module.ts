@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service';
+import { CommonModule } from './common/common.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { HealthModule } from './health/health.module';
 import { MockModule } from './mock/mock.module';
@@ -21,6 +22,7 @@ import { TransactionModule } from './transaction/transaction.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    CommonModule, // Add common module first for global services
     HealthModule,
     MockModule,
     AuthModule,

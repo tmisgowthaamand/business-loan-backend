@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PersistenceService } from '../common/services/persistence.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { CreateEnquiryDto, UpdateEnquiryDto } from './dto';
 import { User } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -23,32 +25,36 @@ export class EnquiryService {
   constructor(
     private prisma: PrismaService,
     @Optional() private supabaseService: SupabaseService,
+    private persistenceService: PersistenceService,
+    private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
   ) {
     this.loadEnquiries();
   }
 
-  private loadEnquiries() {
+  private async loadEnquiries() {
     try {
-      if (fs.existsSync(this.enquiriesFile)) {
-        const data = fs.readFileSync(this.enquiriesFile, 'utf8');
-        this.enquiriesStorage = JSON.parse(data);
-        console.log('📋 Loaded', this.enquiriesStorage.length, 'enquiries from file');
+      // Use persistence service for production-ready data loading
+      const enquiries = await this.persistenceService.loadData('enquiries', []);
+      
+      if (enquiries && enquiries.length > 0) {
+        this.enquiriesStorage = enquiries;
+        console.log('📋 Loaded', this.enquiriesStorage.length, 'enquiries from persistence service');
       } else {
-        // Create default demo enquiries if no file exists
-        this.createDefaultEnquiries();
+        // Create default demo enquiries if no data exists
+        await this.createDefaultEnquiries();
       }
     } catch (error) {
-      console.log('📋 No existing enquiries file, creating default enquiries');
-      this.createDefaultEnquiries();
+      console.log('📋 Error loading enquiries, creating default enquiries:', error.message);
+      await this.createDefaultEnquiries();
     }
   }
 
-  private createDefaultEnquiries() {
+  private async createDefaultEnquiries() {
     this.enquiriesStorage = [
       {
-        id: 9570,
+        id: 1,
         name: 'BALAMURUGAN',
         businessName: 'Balamurugan Enterprises',
         mobile: '9876543215',
@@ -69,7 +75,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 1001,
+        id: 2,
         name: 'Rajesh Kumar',
         businessName: 'Kumar Electronics',
         mobile: '9876543210',
@@ -90,7 +96,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 1002,
+        id: 3,
         name: 'Priya Sharma',
         businessName: 'Sharma Textiles',
         mobile: '9876543211',
@@ -111,7 +117,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 1003,
+        id: 4,
         name: 'Amit Patel',
         businessName: 'Patel Trading Co',
         mobile: '9876543212',
@@ -132,7 +138,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 1004,
+        id: 5,
         name: 'Sunita Gupta',
         businessName: 'Gupta Enterprises',
         mobile: '9876543213',
@@ -153,7 +159,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 1005,
+        id: 6,
         name: 'Vikram Singh',
         businessName: 'Singh Motors',
         mobile: '9876543214',
@@ -174,7 +180,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 6192,
+        id: 7,
         name: 'Renu',
         businessName: 'Renu Enterprises',
         mobile: '9876543210',
@@ -195,7 +201,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 9570,
+        id: 8,
         name: 'BALAMURUGAN',
         businessName: 'Balamurugan Enterprises',
         mobile: '9876543215',
@@ -216,7 +222,7 @@ export class EnquiryService {
         updatedAt: new Date().toISOString(),
       },
       {
-        id: 3886,
+        id: 9,
         name: 'VIGNESH S',
         businessName: 'Vignesh Stores',
         mobile: '9876543220',
@@ -238,17 +244,16 @@ export class EnquiryService {
       }
     ];
     
-    this.saveEnquiries();
+    // Save using persistence service for production compatibility
+    await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
     console.log('📋 Created', this.enquiriesStorage.length, 'default demo enquiries');
   }
 
-  private saveEnquiries() {
+  private async saveEnquiries() {
     try {
-      if (!fs.existsSync(this.dataDir)) {
-        fs.mkdirSync(this.dataDir, { recursive: true });
-      }
-      fs.writeFileSync(this.enquiriesFile, JSON.stringify(this.enquiriesStorage, null, 2));
-      console.log('💾 Saved', this.enquiriesStorage.length, 'enquiries to file');
+      // Use persistence service for production-ready saving
+      await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
+      console.log('💾 Saved', this.enquiriesStorage.length, 'enquiries via persistence service');
     } catch (error) {
       console.error('❌ Error saving enquiries:', error);
     }
@@ -283,8 +288,11 @@ export class EnquiryService {
       throw new Error(`Client "${existingName}" already exists with phone number: ${existingByName.mobile}`);
     }
     
+    // Generate 1-2 digit ID using ID generator service
+    const enquiryId = await this.idGeneratorService.generateEnquiryId();
+    
     const mockEnquiry = {
-      id: Math.floor(Math.random() * 9000) + 2000,
+      id: enquiryId,
       name: createEnquiryDto.name || 'Demo Client',
       businessName: createEnquiryDto.businessName,
       mobile: createEnquiryDto.mobile,
@@ -306,7 +314,7 @@ export class EnquiryService {
     
     // 1. Store in local storage first (for immediate response)
     this.enquiriesStorage.push(mockEnquiry);
-    this.saveEnquiries();
+    await this.saveEnquiries();
     console.log('✅ Enquiry saved to local storage:', mockEnquiry.name);
     
     // 2. Sync to Supabase in background (non-blocking)
@@ -475,7 +483,7 @@ export class EnquiryService {
     };
 
     // Save to file
-    this.saveEnquiries();
+    await this.saveEnquiries();
     
     const updatedEnquiry = this.enquiriesStorage[enquiryIndex];
     console.log('✅ Staff assigned successfully:', updatedEnquiry.name, 'to', staff.name);
@@ -586,7 +594,7 @@ export class EnquiryService {
       updatedAt: new Date().toISOString()
     };
 
-    this.saveEnquiries();
+    await this.saveEnquiries();
     return this.enquiriesStorage[enquiryIndex];
   }
 
@@ -598,7 +606,7 @@ export class EnquiryService {
     }
 
     const removedEnquiry = this.enquiriesStorage.splice(enquiryIndex, 1)[0];
-    this.saveEnquiries();
+    await this.saveEnquiries();
     return { message: 'Enquiry deleted successfully', enquiry: removedEnquiry };
   }
 

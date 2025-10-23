@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { StaffService } from '../staff/staff.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import * as nodemailer from 'nodemailer';
@@ -12,6 +13,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private staffService: StaffService,
   ) {}
 
   async signup(dto: SignupDto) {
@@ -39,49 +41,31 @@ export class AuthService {
   async login(dto: LoginDto) {
     console.log('🔐 Auth service login called with:', dto.email);
     
-    // Demo mode - bypass database for faster login
-    const demoUsers = [
-      {
-        id: 1,
-        name: 'Admin User',
-        email: 'admin@gmail.com',
-        role: 'ADMIN',
-        password: 'admin123'
-      },
-      {
-        id: 2,
-        name: 'Pankil',
-        email: 'govindamarketing9998@gmail.com',
-        role: 'ADMIN',
-        password: 'admin123'
-      },
-      {
-        id: 3,
-        name: 'Venkat',
-        email: 'govindamanager9998@gmail.com',
-        role: 'EMPLOYEE',
-        password: 'admin123'
-      },
-      {
-        id: 4,
-        name: 'Dinesh',
-        email: 'dinesh@gmail.com',
-        role: 'EMPLOYEE',
-        password: 'admin123'
+    try {
+      // Use staff service to authenticate
+      const authResult = await this.staffService.authenticateStaff(dto.email, dto.password);
+      
+      if (!authResult) {
+        console.log('❌ Invalid credentials for:', dto.email);
+        throw new ForbiddenException('Invalid credentials. Please check your email and password.');
       }
-    ];
 
-    // Find demo user
-    const user = demoUsers.find(u => u.email === dto.email);
-    
-    if (!user || user.password !== dto.password) {
-      console.log('❌ Invalid credentials for:', dto.email);
-      throw new ForbiddenException('Invalid credentials');
+      console.log('✅ Staff authenticated:', authResult.staff.name);
+      
+      // Return the auth token and user data in the expected format
+      return {
+        access_token: authResult.authToken,
+        user: {
+          id: authResult.staff.id,
+          name: authResult.staff.name,
+          email: authResult.staff.email,
+          role: authResult.staff.role
+        }
+      };
+    } catch (error) {
+      console.error('❌ Login error:', error);
+      throw new ForbiddenException('Invalid credentials. Please check your email and password.');
     }
-
-    console.log('✅ Demo user found:', user.name);
-    
-    return this.signToken(user.id, user.email, user.role);
   }
 
   async sendInvite(email: string) {

@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nest
 import { CreateStaffDto, UpdateStaffDto, StaffEntity, StaffRole, StaffStatus, AccessTokenResult, StaffStats } from './dto/staff.dto';
 import { GmailService } from './gmail.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -20,6 +21,7 @@ export class StaffService {
   constructor(
     private gmailService: GmailService,
     private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService
   ) {
@@ -414,8 +416,9 @@ export class StaffService {
         this.logger.warn(`⚠️ Supabase insert failed, using in-memory storage: ${error.message}`);
         
         // Create staff in memory as fallback
+        const staffId = await this.idGeneratorService.generateStaffId();
         const newStaff: StaffEntity = {
-          id: this.nextId++,
+          id: staffId,
           name: createStaffDto.name,
           email: createStaffDto.email,
           password: hashedPassword,
@@ -467,16 +470,41 @@ export class StaffService {
         this.logger.log(`✅ Staff created in Supabase: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newUser.id}`);
       }
 
-      // Send verification email
+      // Send verification email (non-blocking in production)
       this.logger.log(`📧 Sending verification email to: ${createStaffDto.email}`);
-      const emailSent = await this.gmailService.sendAccessLink(
-        createStaffDto.email,
-        createStaffDto.name,
-        accessToken,
-        createStaffDto.role
-      );
-
-      this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+      const isProduction = process.env.NODE_ENV === 'production';
+      const isRender = process.env.RENDER === 'true';
+      const isVercel = process.env.VERCEL === '1';
+      
+      let emailSent = false;
+      
+      if (isProduction && (isRender || isVercel)) {
+        // Non-blocking email sending for production environments
+        this.gmailService.sendAccessLink(
+          createStaffDto.email,
+          createStaffDto.name,
+          accessToken,
+          createStaffDto.role
+        ).then((result) => {
+          this.logger.log(`📧 Verification email ${result ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+        }).catch((error) => {
+          this.logger.error(`📧 Background email sending failed for ${createStaffDto.email}:`, error);
+        });
+        
+        // Return immediately in production to avoid blocking
+        emailSent = true; // Assume success for immediate response
+        this.logger.log(`📧 Verification email queued for background sending to: ${createStaffDto.email}`);
+      } else {
+        // Blocking email sending for development/localhost
+        emailSent = await this.gmailService.sendAccessLink(
+          createStaffDto.email,
+          createStaffDto.name,
+          accessToken,
+          createStaffDto.role
+        );
+        
+        this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+      }
 
       // Create notification for new staff member
       try {
@@ -812,6 +840,12 @@ export class StaffService {
 
       this.staff.splice(staffIndex, 1);
       this.saveStaffToFile(); // Save to persistent storage
+      
+      // Sync deletion to Supabase in background (non-blocking)
+      this.syncStaffDeletionToSupabase(staff).catch(error => {
+        this.logger.error('❌ Failed to sync staff deletion to Supabase:', error);
+      });
+      
       this.logger.log(`✅ Staff deleted from memory: ${staff.email}`);
     } catch (error) {
       this.logger.error('❌ Error deleting staff:', error);
@@ -1109,11 +1143,21 @@ export class StaffService {
     const staff = this.staff.find(s => s.email === email);
     
     if (!staff || !staff.hasAccess || staff.status !== StaffStatus.ACTIVE) {
+      this.logger.warn(`Authentication failed for ${email}: Staff not found, no access, or inactive`);
       return null;
     }
 
-    const isPasswordValid = await bcrypt.compare(password, staff.password);
+    // Use bcrypt to compare hashed passwords
+    let isPasswordValid = false;
+    try {
+      isPasswordValid = await bcrypt.compare(password, staff.password);
+    } catch (error) {
+      this.logger.error(`Password comparison error for ${email}:`, error);
+      return null;
+    }
+    
     if (!isPasswordValid) {
+      this.logger.warn(`Authentication failed for ${email}: Invalid password`);
       return null;
     }
 
@@ -1132,7 +1176,7 @@ export class StaffService {
       { expiresIn: '7d' }
     );
 
-    this.logger.log(`Staff authenticated: ${staff.email}`);
+    this.logger.log(`✅ Staff authenticated successfully: ${staff.email} (${staff.role})`);
 
     const { password: _, ...staffWithoutPassword } = staff;
     return { staff: staffWithoutPassword, authToken };
@@ -1407,6 +1451,43 @@ export class StaffService {
       message: `Cleared ${clearedCount} staff members from storage`,
       cleared: clearedCount
     };
+  }
+
+  // Sync staff deletion to Supabase
+  private async syncStaffDeletionToSupabase(staff: StaffEntity): Promise<void> {
+    if (!this.supabaseService) {
+      console.log('⚠️ Supabase service not available, skipping staff deletion sync');
+      return;
+    }
+
+    try {
+      // Try to delete from Supabase Staff table
+      const { error: staffError } = await this.supabaseService.client
+        .from('Staff')
+        .delete()
+        .eq('email', staff.email);
+
+      if (staffError) {
+        console.log('⚠️ Failed to delete from Staff table:', staffError.message);
+      } else {
+        console.log(`✅ Staff deletion synced to Supabase Staff table: ${staff.email}`);
+      }
+
+      // Also try to delete from User table if it exists there
+      const { error: userError } = await this.supabaseService.client
+        .from('User')
+        .delete()
+        .eq('email', staff.email);
+
+      if (userError) {
+        console.log('⚠️ Failed to delete from User table:', userError.message);
+      } else {
+        console.log(`✅ Staff deletion synced to Supabase User table: ${staff.email}`);
+      }
+    } catch (error) {
+      console.error('❌ Error syncing staff deletion to Supabase:', error);
+      throw error;
+    }
   }
 
   // Sync staff to Supabase

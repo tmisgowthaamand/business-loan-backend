@@ -4,11 +4,34 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm run render:build
-    startCommand: npm run render:start
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health/ping
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: RENDER
+        value: true
+      - key: PORT
+        value: 5002
+      # Gmail SMTP Configuration
+      - key: GMAIL_EMAIL
+        value: gokrishna98@gmail.com
+      - key: GMAIL_APP_PASSWORD
+        value: wwigqdrsiqarwiwz
+      # Supabase Configuration
+      - key: SUPABASE_URL
+        value: https://vxtpjsymbcirszksrafg.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU
+      # JWT Configuration
+      - key: JWT_SECRET
+        value: business-loan-jwt-secret-key-production-2024
+      # Backend URL for email links
+      - key: BACKEND_URL
+        value: https://business-loan-backend.onrender.com
+      # Database Configuration
       - key: DATABASE_URL
         value: file:./dev.db
       - key: PRISMA_QUERY_ENGINE_LIBRARY

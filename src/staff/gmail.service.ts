@@ -18,20 +18,56 @@ export class GmailService {
   }
 
   private initializeTransporter() {
-    // Force override environment variables with correct credentials
-    const gmailEmail = 'gokrishna98@gmail.com';
-    const gmailPassword = 'wwigqdrsiqarwiwz';
+    // Get credentials from environment variables or use fallback
+    const gmailEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
+    const gmailPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
 
+    // Production-optimized transporter configuration
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: isProduction ? 465 : 587, // Use SSL in production, STARTTLS in dev
+      secure: isProduction, // SSL for production
       auth: {
         user: gmailEmail,
         pass: gmailPassword,
       },
+      tls: {
+        rejectUnauthorized: false, // For production environments
+        ciphers: 'SSLv3', // For better compatibility
+        minVersion: 'TLSv1.2' // Minimum TLS version
+      },
+      pool: true, // Connection pooling for performance
+      maxConnections: isProduction ? 10 : 5, // More connections in production
+      maxMessages: isProduction ? 200 : 100, // More messages per connection
+      rateLimit: isProduction ? 20 : 14, // Higher rate limit in production
+      connectionTimeout: 60000, // 60 seconds timeout
+      greetingTimeout: 30000, // 30 seconds greeting timeout
+      socketTimeout: 60000, // 60 seconds socket timeout
+      // Render/Vercel specific optimizations
+      ...(isRender && {
+        connectionTimeout: 30000, // Shorter timeout for Render
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
+      }),
+      ...(isVercel && {
+        connectionTimeout: 25000, // Even shorter for Vercel serverless
+        greetingTimeout: 10000,
+        socketTimeout: 25000,
+      }),
+      // Additional production optimizations
+      logger: false, // Disable detailed logging in production
+      debug: !isProduction, // Debug only in development
     });
 
     this.logger.log(`📧 Gmail service initialized with email: ${gmailEmail}`);
     this.logger.log(`🔑 Using app password: ${gmailPassword.substring(0, 4)}****${gmailPassword.substring(gmailPassword.length - 4)}`);
+    this.logger.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+    this.logger.log(`🚀 Platform: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
+    this.logger.log(`🔒 Security: ${isProduction ? 'SSL (Port 465)' : 'STARTTLS (Port 587)'}`);
   }
 
   async sendAccessLink(
@@ -40,42 +76,75 @@ export class GmailService {
     accessToken: string,
     role: StaffRole
   ): Promise<boolean> {
-    // Force use correct credentials (override any environment variables)
-    const currentEmail = 'gokrishna98@gmail.com';
-    const currentPassword = 'wwigqdrsiqarwiwz';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    
+    // Get credentials from environment or use fallback
+    const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
+    const currentPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
     
     try {
-      // Reinitialize transporter to ensure fresh credentials
-      this.initializeTransporter();
+      // Dynamic backend URL based on environment
+      let backendUrl = this.config.get('BACKEND_URL') || 'http://localhost:5002';
+      if (isRender && !backendUrl.includes('onrender.com')) {
+        backendUrl = `https://${process.env.RENDER_SERVICE_NAME || 'business-loan-backend'}.onrender.com`;
+      }
       
-      const accessLink = `${this.config.get('BACKEND_URL') || 'http://localhost:5002'}/api/staff/verify-access/${accessToken}`;
+      const accessLink = `${backendUrl}/api/staff/verify-access/${accessToken}`;
       
       const mailOptions = {
-        from: currentEmail,
+        from: {
+          name: 'Business Loan Management System',
+          address: currentEmail
+        },
         to: recipientEmail,
         subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
+        // Production optimizations
+        priority: 'normal' as const,
+        headers: {
+          'X-Mailer': 'Business Loan System',
+          'X-Priority': '3',
+        }
       };
       
       this.logger.log(`📧 Sending access link to ${recipientEmail} (${role})`);
-      this.logger.log(`📧 Using SMTP: ${currentEmail}`);
-      this.logger.log(`🔑 App password: ${currentPassword} (${currentPassword.length} characters)`);
+      this.logger.log(`🌐 Backend URL: ${backendUrl}`);
+      this.logger.log(`🚀 Platform: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
       
-      // Test connection before sending
-      await this.transporter.verify();
-      this.logger.log(`📧 SMTP connection verified successfully`);
+      // Skip connection verification in production for speed
+      if (!isProduction) {
+        await this.transporter.verify();
+        this.logger.log(`📧 SMTP connection verified successfully`);
+      }
       
-      const result = await this.transporter.sendMail(mailOptions);
+      // Send email with timeout for production environments
+      const sendPromise = this.transporter.sendMail(mailOptions);
+      const timeoutMs = isRender ? 25000 : isVercel ? 20000 : 30000;
+      
+      const result = await Promise.race([
+        sendPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email send timeout')), timeoutMs)
+        )
+      ]) as any;
       
       this.logger.log(`✅ Access link sent successfully to ${recipientEmail}. Message ID: ${result.messageId}`);
       return true;
     } catch (error) {
       this.logger.error(`❌ Failed to send access link to ${recipientEmail}:`, error);
       
-      // Provide specific error guidance
-      if (error.code === 'EAUTH' || error.responseCode === 535) {
-        this.logger.error(`🔐 Authentication failed. Current app password: ${currentPassword}`);
-        this.logger.error(`🔗 Generate new app password at: https://myaccount.google.com/apppasswords`);
+      // Enhanced error handling for production
+      if (error.message === 'Email send timeout') {
+        this.logger.error(`⏱️ Email send timeout (${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment)`);
+      } else if (error.code === 'EAUTH' || error.responseCode === 535) {
+        this.logger.error(`🔐 Authentication failed. Check Gmail app password configuration`);
+        if (!isProduction) {
+          this.logger.error(`🔗 Generate new app password at: https://myaccount.google.com/apppasswords`);
+        }
+      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+        this.logger.error(`🌐 Network connection issue in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
       }
       
       return false;

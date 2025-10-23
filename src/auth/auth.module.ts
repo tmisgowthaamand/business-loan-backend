@@ -9,11 +9,13 @@ import { SupabaseAuthService } from './supabase-auth.service';
 import { JwtStrategy } from './strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseModule } from '../supabase/supabase.module';
+import { StaffModule } from '../staff/staff.module';
 
 @Module({
   imports: [
     PassportModule,
     forwardRef(() => SupabaseModule),
+    forwardRef(() => StaffModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (config: ConfigService) => ({

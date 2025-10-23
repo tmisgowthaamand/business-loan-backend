@@ -429,18 +429,21 @@ export class StaffController {
   @Post('resend-verification/:id')
   async resendVerificationEmail(@Param('id') id: string) {
     try {
-      console.log('📧 Resending verification email for staff ID:', id);
-      const result = await this.staffService.resendVerificationEmail(parseInt(id));
-      return {
-        message: result.emailSent ? 'Verification email sent successfully' : 'Failed to send verification email',
-        emailSent: result.emailSent,
-        staff: result.staff,
-        timestamp: new Date().toISOString()
-      };
+      return this.staffService.resendVerificationEmail(+id);
     } catch (error) {
       console.error('Error resending verification email:', error);
       throw new BadRequestException(`Failed to resend verification email: ${error.message}`);
     }
+  }
+
+  @Post('sync/to-supabase')
+  async syncAllToSupabase() {
+    return this.staffService.syncAllStaffToSupabase();
+  }
+
+  @Get('sync/status')
+  async getSyncStatus() {
+    return this.staffService.getStaffSyncStatus();
   }
 
   @Get('debug-smtp')

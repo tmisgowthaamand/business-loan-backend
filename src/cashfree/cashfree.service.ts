@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { ShortlistService } from '../shortlist/shortlist.service';
 import { CreateCashfreeApplicationDto } from './dto';
 import { User, CashfreeStatus } from '@prisma/client';
@@ -23,6 +24,7 @@ export class CashfreeService {
   constructor(
     private prisma: PrismaService,
     @Optional() private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => ShortlistService))
     private shortlistService: ShortlistService,
   ) {
@@ -49,8 +51,8 @@ export class CashfreeService {
   private createSamplePayments() {
     const samplePayments = [
       {
-        id: Date.now() + 1,
-        shortlistId: 1001,
+        id: 1,
+        shortlistId: 1,
         loanAmount: 500000,
         tenure: 24,
         interestRate: 12.5,
@@ -72,14 +74,14 @@ export class CashfreeService {
         submittedAt: new Date('2024-10-15'),
         decisionDate: null,
         shortlist: {
-          id: 1001,
+          id: 1,
           name: 'BALAMURUGAN',
           mobile: '9876543215',
           businessName: 'Balamurugan Enterprises',
           businessType: 'Manufacturing',
           loanAmount: 500000,
           enquiry: {
-            id: 9570,
+            id: 1,
             name: 'BALAMURUGAN',
             mobile: '9876543215',
             businessType: 'Manufacturing',
@@ -93,8 +95,8 @@ export class CashfreeService {
         }
       },
       {
-        id: Date.now() + 2,
-        shortlistId: 1002,
+        id: 2,
+        shortlistId: 2,
         loanAmount: 750000,
         tenure: 36,
         interestRate: 11.8,
@@ -116,14 +118,14 @@ export class CashfreeService {
         submittedAt: new Date('2024-10-14'),
         decisionDate: null,
         shortlist: {
-          id: 1002,
+          id: 2,
           name: 'RAJESH KUMAR',
           mobile: '9876543216',
           businessName: 'Kumar Industries',
           businessType: 'Trading',
           loanAmount: 750000,
           enquiry: {
-            id: 1002,
+            id: 2,
             name: 'RAJESH KUMAR',
             mobile: '9876543216',
             businessType: 'Trading',
@@ -137,8 +139,8 @@ export class CashfreeService {
         }
       },
       {
-        id: Date.now() + 3,
-        shortlistId: 1003,
+        id: 3,
+        shortlistId: 3,
         loanAmount: 300000,
         tenure: 18,
         interestRate: 13.2,
@@ -160,14 +162,14 @@ export class CashfreeService {
         submittedAt: new Date('2024-10-13'),
         decisionDate: null,
         shortlist: {
-          id: 1003,
+          id: 3,
           name: 'PRIYA SHARMA',
           mobile: '9876543217',
           businessName: 'Sharma Textiles',
           businessType: 'Textiles',
           loanAmount: 300000,
           enquiry: {
-            id: 1003,
+            id: 3,
             name: 'PRIYA SHARMA',
             mobile: '9876543217',
             businessType: 'Textiles',
@@ -229,8 +231,11 @@ export class CashfreeService {
         }
       }
       
+      // Generate 1-2 digit ID using ID generator service
+      const applicationId = await this.idGeneratorService.generateCashfreeId();
+      
       const mockApplication = {
-        id: Date.now(),
+        id: applicationId,
         shortlistId: createCashfreeApplicationDto.shortlistId || 1,
         loanAmount: createCashfreeApplicationDto.loanAmount || 0,
         tenure: createCashfreeApplicationDto.tenure || 12,

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto, UpdateTransactionDto } from './dto/index';
 import { User } from '@prisma/client';
@@ -24,6 +25,7 @@ export class TransactionService {
   constructor(
     private prisma: PrismaService,
     @Optional() private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
   ) {
@@ -117,8 +119,11 @@ export class TransactionService {
         throw new BadRequestException('Transaction ID already exists');
       }
 
+      // Generate 1-2 digit ID using ID generator service
+      const transactionId = await this.idGeneratorService.generateTransactionId();
+      
       const mockTransaction = {
-        id: Math.floor(Math.random() * 9000) + 1000,
+        id: transactionId,
         ...createTransactionDto,
         amount: parseFloat(createTransactionDto.amount.toString()),
         date: new Date(createTransactionDto.date),
@@ -134,16 +139,23 @@ export class TransactionService {
         console.error('❌ Failed to sync transaction to Supabase:', error);
       });
 
-      // Create notification
+      // Create enhanced notification with client details and timestamp
       try {
         await this.notificationsService.createSystemNotification({
-          type: 'PAYMENT_APPLIED',
-          title: 'New Transaction Created',
-          message: `Transaction ${mockTransaction.name} for ₹${mockTransaction.amount.toLocaleString()} has been created`,
-          priority: 'MEDIUM',
-          data: { transactionId: mockTransaction.id, amount: mockTransaction.amount }
+          type: 'TRANSACTION_CREATED',
+          title: 'New Transaction Processed',
+          message: `Transaction by ${mockTransaction.name} for ₹${mockTransaction.amount.toLocaleString()} (ID: ${mockTransaction.transactionId}) - Status: ${mockTransaction.status}`,
+          priority: mockTransaction.amount >= 100000 ? 'HIGH' : 'MEDIUM',
+          data: { 
+            transactionId: mockTransaction.id, 
+            clientName: mockTransaction.name,
+            amount: mockTransaction.amount,
+            transactionRef: mockTransaction.transactionId,
+            status: mockTransaction.status,
+            timestamp: mockTransaction.createdAt.toISOString()
+          }
         });
-        console.log('🔔 Notification created for transaction:', mockTransaction.name);
+        console.log('🔔 Enhanced notification created for transaction:', mockTransaction.name, 'Amount:', mockTransaction.amount);
       } catch (notificationError) {
         console.error('❌ Failed to create notification:', notificationError);
       }
@@ -227,6 +239,36 @@ export class TransactionService {
       this.syncTransactionToSupabase(updatedTransaction).catch(error => {
         console.error('❌ Failed to sync updated transaction to Supabase:', error);
       });
+
+      // Create enhanced notification for transaction update
+      try {
+        const currentTime = new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone: 'Asia/Kolkata'
+        });
+        
+        await this.notificationsService.createSystemNotification({
+          type: 'TRANSACTION_UPDATED',
+          title: 'Transaction Updated',
+          message: `Transaction by ${updatedTransaction.name} for ₹${updatedTransaction.amount.toLocaleString()} updated to ${updatedTransaction.status} at ${currentTime}`,
+          priority: updatedTransaction.status === 'COMPLETED' ? 'HIGH' : 'MEDIUM',
+          data: {
+            transactionId: updatedTransaction.id,
+            clientName: updatedTransaction.name,
+            amount: updatedTransaction.amount,
+            transactionRef: updatedTransaction.transactionId,
+            oldStatus: this.demoTransactions[transactionIndex]?.status,
+            newStatus: updatedTransaction.status,
+            updatedAt: new Date().toISOString(),
+            updatedBy: userId
+          }
+        });
+        console.log('🔔 Enhanced update notification created for transaction:', updatedTransaction.name, 'Status:', updatedTransaction.status);
+      } catch (notificationError) {
+        console.error('❌ Failed to create update notification:', notificationError);
+      }
 
       console.log('✅ Transaction updated successfully in demo mode:', updatedTransaction.name);
       return {
