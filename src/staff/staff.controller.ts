@@ -19,6 +19,35 @@ export class StaffController {
     };
   }
 
+  @Post('test-email')
+  async testEmailService(@Body() testData: { email?: string, name?: string }) {
+    try {
+      const testEmail = testData.email || 'gowthaamaneswar1998@gmail.com';
+      const testName = testData.name || 'Test User';
+      
+      console.log(`📧 Testing email service for: ${testEmail}`);
+      
+      const result = await this.staffService.testEmailDelivery(testEmail, testName);
+      
+      return {
+        message: 'Email test completed',
+        testEmail,
+        testName,
+        emailSent: result.success,
+        method: result.method,
+        details: result.details,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error testing email service:', error);
+      return {
+        message: 'Email test failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   @Post()
   async createStaff(@Body() createStaffDto: CreateStaffDto) {
     try {

@@ -1698,4 +1698,46 @@ export class StaffService {
       };
     }
   }
+
+  async testEmailDelivery(testEmail: string, testName: string): Promise<{ success: boolean; method: string; details: string }> {
+    this.logger.log(`📧 Testing email delivery to: ${testEmail}`);
+    
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    try {
+      // Generate test access token
+      const testToken = this.generateAccessToken();
+      
+      // Test the email service
+      const emailSent = await this.gmailService.sendAccessLink(
+        testEmail,
+        testName,
+        testToken,
+        StaffRole.ADMIN
+      );
+      
+      if (emailSent) {
+        const method = isRender ? 'SendGrid/Webhook/Fallback' : 'SMTP/SendGrid';
+        return {
+          success: true,
+          method: method,
+          details: `Email test successful using ${method} delivery method`
+        };
+      } else {
+        return {
+          success: false,
+          method: 'Failed',
+          details: 'All email delivery methods failed'
+        };
+      }
+    } catch (error) {
+      this.logger.error(`❌ Email test failed for ${testEmail}:`, error);
+      return {
+        success: false,
+        method: 'Error',
+        details: `Email test error: ${error.message}`
+      };
+    }
+  }
 }
