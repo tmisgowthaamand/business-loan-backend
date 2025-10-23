@@ -25,8 +25,35 @@ export class GmailService {
     const isRender = process.env.RENDER === 'true';
     const isVercel = process.env.VERCEL === '1';
 
+    // Enhanced Render-specific configuration
+    const renderConfig = isRender ? {
+      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587, // Use STARTTLS for better Render compatibility
+      secure: false, // Don't use SSL, use STARTTLS instead
+      auth: {
+        user: gmailEmail,
+        pass: gmailPassword,
+      },
+      tls: {
+        rejectUnauthorized: false,
+        ciphers: 'SSLv3',
+        minVersion: 'TLSv1.2',
+        servername: 'smtp.gmail.com',
+      },
+      connectionTimeout: 20000, // 20 seconds for Render
+      greetingTimeout: 10000, // 10 seconds
+      socketTimeout: 20000, // 20 seconds
+      pool: false, // Disable pooling for Render
+      maxConnections: 1, // Single connection for Render
+      maxMessages: 10, // Fewer messages per connection
+      rateLimit: 5, // Lower rate limit for Render
+      logger: false,
+      debug: false,
+    } : {};
+
     // Production-optimized transporter configuration
-    this.transporter = nodemailer.createTransport({
+    const config = isRender ? renderConfig : {
       service: 'gmail',
       host: 'smtp.gmail.com',
       port: isProduction ? 465 : 587, // Use SSL in production, STARTTLS in dev
@@ -47,12 +74,7 @@ export class GmailService {
       connectionTimeout: 60000, // 60 seconds timeout
       greetingTimeout: 30000, // 30 seconds greeting timeout
       socketTimeout: 60000, // 60 seconds socket timeout
-      // Render/Vercel specific optimizations
-      ...(isRender && {
-        connectionTimeout: 30000, // Shorter timeout for Render
-        greetingTimeout: 15000,
-        socketTimeout: 30000,
-      }),
+      // Vercel specific optimizations
       ...(isVercel && {
         connectionTimeout: 25000, // Even shorter for Vercel serverless
         greetingTimeout: 10000,
@@ -61,7 +83,9 @@ export class GmailService {
       // Additional production optimizations
       logger: false, // Disable detailed logging in production
       debug: !isProduction, // Debug only in development
-    });
+    };
+
+    this.transporter = nodemailer.createTransport(config as any);
 
     this.logger.log(`📧 Gmail service initialized with email: ${gmailEmail}`);
     this.logger.log(`🔑 Using app password: ${gmailPassword.substring(0, 4)}****${gmailPassword.substring(gmailPassword.length - 4)}`);
@@ -128,14 +152,33 @@ export class GmailService {
       
       // Send email with timeout for production environments
       const sendPromise = this.transporter.sendMail(mailOptions);
-      const timeoutMs = isRender ? 15000 : isVercel ? 10000 : 30000; // Shorter timeouts for production
+      const timeoutMs = isRender ? 10000 : isVercel ? 8000 : 30000; // Shorter timeouts for production
       
-      const result = await Promise.race([
-        sendPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Email send timeout')), timeoutMs)
-        )
-      ]) as any;
+      // Enhanced timeout handling with retry for Render
+      let result;
+      let attempts = isRender ? 2 : 1; // Retry once for Render
+      
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          this.logger.log(`📧 Email send attempt ${attempt}/${attempts} for ${recipientEmail}`);
+          
+          result = await Promise.race([
+            sendPromise,
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
+            )
+          ]) as any;
+          
+          break; // Success, exit retry loop
+        } catch (error) {
+          if (attempt === attempts) {
+            throw error; // Last attempt failed, throw error
+          }
+          
+          this.logger.warn(`📧 Email attempt ${attempt} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        }
+      }
       
       this.logger.log(`✅ Access link sent successfully to ${recipientEmail}. Message ID: ${result.messageId}`);
       return true;
@@ -144,15 +187,25 @@ export class GmailService {
       this.logger.error(`Error: ${error.message}`);
       
       // Enhanced error handling for production
-      if (error.message === 'Email send timeout') {
+      if (error.message === 'Connection timeout' || error.message === 'Email send timeout') {
         this.logger.error(`⏱️ Email send timeout (${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment)`);
+        if (isRender) {
+          this.logger.error(`🌐 Render network restrictions may be blocking SMTP connections`);
+          this.logger.error(`💡 Consider using alternative email service or webhook notifications`);
+        }
       } else if (error.code === 'EAUTH' || error.responseCode === 535) {
         this.logger.error(`🔐 Authentication failed. Check Gmail app password configuration`);
         if (!isProduction) {
           this.logger.error(`🔗 Generate new app password at: https://myaccount.google.com/apppasswords`);
         }
-      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
         this.logger.error(`🌐 Network connection issue in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
+        if (isRender) {
+          this.logger.error(`🔧 Render may have firewall restrictions on SMTP ports`);
+          this.logger.error(`📧 Email functionality disabled for this deployment`);
+        }
+      } else if (error.message.includes('timeout')) {
+        this.logger.error(`⏰ Network timeout in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
       }
       
       // In production, don't fail the entire operation due to email issues

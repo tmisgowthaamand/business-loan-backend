@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { CreateStaffDto, UpdateStaffDto, StaffEntity, StaffRole, StaffStatus, AccessTokenResult, StaffStats } from './dto/staff.dto';
 import { GmailService } from './gmail.service';
+import { WebhookEmailService } from './webhook-email.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -20,10 +21,10 @@ export class StaffService {
 
   constructor(
     private gmailService: GmailService,
+    private webhookEmailService: WebhookEmailService,
     private supabaseService: SupabaseService,
     private idGeneratorService: IdGeneratorService,
-    @Inject(forwardRef(() => NotificationsService))
-    private notificationsService: NotificationsService
+    @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
   ) {
     // Initialize synchronously to avoid async issues
     this.initializeDefaultStaff();
@@ -505,20 +506,40 @@ export class StaffService {
       let emailSent = false;
       
       if (isProduction && (isRender || isVercel)) {
-        // Non-blocking email sending for production environments
-        this.gmailService.sendAccessLink(
-          createStaffDto.email,
-          createStaffDto.name,
-          accessToken,
-          createStaffDto.role
-        ).then((result) => {
-          this.logger.log(`📧 Verification email ${result ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
-        }).catch((error) => {
-          this.logger.error(`📧 Background email sending failed for ${createStaffDto.email}:`, error);
-        });
-        
-        // Return immediately in production to avoid blocking
-        emailSent = true; // Assume success for immediate response
+        // Use webhook email service for Render/Vercel environments
+        if (isRender) {
+          this.webhookEmailService.sendAccessLink(
+            createStaffDto.email,
+            createStaffDto.name,
+            accessToken,
+            createStaffDto.role
+          ).then(success => {
+            if (success) {
+              this.logger.log(`📧 Verification email sent successfully via webhook to: ${createStaffDto.email}`);
+            } else {
+              this.logger.log(`📧 Verification email logged for manual processing: ${createStaffDto.email}`);
+            }
+          }).catch(error => {
+            this.logger.error(`📧 Webhook email error for ${createStaffDto.email}:`, error);
+          });
+        } else {
+          // Non-blocking Gmail for Vercel
+          this.gmailService.sendAccessLink(
+            createStaffDto.email,
+            createStaffDto.name,
+            accessToken,
+            createStaffDto.role
+          ).then(success => {
+            if (success) {
+              this.logger.log(`📧 Verification email sent successfully to: ${createStaffDto.email}`);
+            } else {
+              this.logger.error(`📧 Verification email failed to send ❌ to ${createStaffDto.email}`);
+            }
+          }).catch(error => {
+            this.logger.error(`📧 Verification email error for ${createStaffDto.email}:`, error);
+          });
+        }
+
         this.logger.log(`📧 Verification email queued for background sending to: ${createStaffDto.email}`);
       } else {
         // Blocking email sending for development/localhost
@@ -528,7 +549,6 @@ export class StaffService {
           accessToken,
           createStaffDto.role
         );
-        
         this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
       }
 
