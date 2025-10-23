@@ -156,9 +156,9 @@ export class GmailService {
     
     const accessLink = `${backendUrl}/api/staff/verify-access/${accessToken}`;
 
-    // Strategy 1: Try SendGrid first (works on Render)
-    if (this.sendGridInitialized && isRender) {
-      this.logger.log(`📧 Render detected - using SendGrid for ${recipientEmail}`);
+    // Strategy 1: Try SendGrid first (works on Render and Vercel)
+    if (this.sendGridInitialized && (isRender || isVercel)) {
+      this.logger.log(`📧 ${isRender ? 'Render' : 'Vercel'} detected - using SendGrid with gokrishna98@gmail.com for ${recipientEmail}`);
       const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
       if (sendGridSuccess) {
         return true;
@@ -210,7 +210,7 @@ export class GmailService {
     }
 
     try {
-      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'noreply@businessloan.com';
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'gokrishna98@gmail.com';
       
       const msg = {
         to: recipientEmail,
@@ -228,6 +228,41 @@ export class GmailService {
       return true;
     } catch (error) {
       this.logger.error(`❌ SendGrid failed for ${recipientEmail}:`, error.message);
+      if (error.response?.body?.errors) {
+        this.logger.error('SendGrid errors:', error.response.body.errors);
+      }
+      return false;
+    }
+  }
+
+  private async sendRevokedViaSendGrid(
+    recipientEmail: string,
+    recipientName: string,
+    role: StaffRole
+  ): Promise<boolean> {
+    if (!this.sendGridInitialized) {
+      return false;
+    }
+
+    try {
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'gokrishna98@gmail.com';
+      
+      const msg = {
+        to: recipientEmail,
+        from: {
+          email: fromEmail,
+          name: 'Business Loan Management System'
+        },
+        subject: `🚫 Access Revoked - Business Loan Management System`,
+        html: this.generateAccessRevokedTemplate(recipientName, role),
+      };
+
+      this.logger.log(`📧 Sending access revoked via SendGrid to ${recipientEmail}`);
+      await sgMail.send(msg);
+      this.logger.log(`✅ SendGrid access revoked email sent successfully to ${recipientEmail}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ SendGrid access revoked failed for ${recipientEmail}:`, error.message);
       if (error.response?.body?.errors) {
         this.logger.error('SendGrid errors:', error.response.body.errors);
       }
@@ -363,6 +398,14 @@ export class GmailService {
     recipientName: string,
     role: StaffRole
   ): Promise<boolean> {
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    
+    // Use SendGrid for Render/Vercel, SMTP for local
+    if ((isRender || isVercel) && this.sendGridInitialized) {
+      return this.sendRevokedViaSendGrid(recipientEmail, recipientName, role);
+    }
+    
     try {
       const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
       
