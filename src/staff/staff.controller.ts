@@ -438,7 +438,7 @@ export class StaffController {
     }
   }
 
-  @Post('test-email')
+  @Post('test-connection')
   async testEmailConnection() {
     try {
       console.log('📧 Testing email connection...');
@@ -452,6 +452,71 @@ export class StaffController {
     } catch (error) {
       console.error('Error testing email connection:', error);
       throw new BadRequestException(`Failed to test email connection: ${error.message}`);
+    }
+  }
+
+  @Post('test-render-email')
+  async testRenderEmailDelivery(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'gowthaamankrishna1998@gmail.com';
+      const isRender = process.env.RENDER === 'true';
+      
+      console.log(`🌐 Testing Render email delivery to: ${testEmail}`);
+      console.log(`🌐 Environment: ${isRender ? 'Render' : 'Local/Other'}`);
+      
+      if (!isRender) {
+        return {
+          message: 'Not in Render environment',
+          environment: 'Local/Other',
+          recommendation: 'This test is specifically for Render deployment issues',
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Test SendGrid configuration
+      const sendGridConfigured = process.env.SENDGRID_API_KEY && process.env.SENDGRID_API_KEY.startsWith('SG.');
+      
+      if (!sendGridConfigured) {
+        return {
+          message: 'SendGrid not configured for Render',
+          environment: 'Render',
+          sendGridConfigured: false,
+          instructions: {
+            step1: 'Sign up for SendGrid: https://app.sendgrid.com/',
+            step2: 'Verify your sender email/domain',
+            step3: 'Create API key: Settings > API Keys > Create API Key',
+            step4: 'Add to Render environment: SENDGRID_API_KEY=SG.your-key',
+            step5: 'Add SENDGRID_FROM_EMAIL=your-verified-email@domain.com',
+            step6: 'Redeploy your Render service'
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Test actual email delivery
+      const result = await this.staffService.testEmailDelivery(testEmail, 'Render Test User');
+      
+      return {
+        message: 'Render email test completed',
+        environment: 'Render',
+        sendGridConfigured: true,
+        emailTest: {
+          success: result.success,
+          method: result.method,
+          details: result.details,
+          recipient: testEmail
+        },
+        timestamp: new Date().toISOString(),
+        status: result.success ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('Error testing Render email:', error);
+      return {
+        message: 'Render email test failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
     }
   }
 
@@ -857,38 +922,6 @@ export class StaffController {
     }
   }
 
-  // Test Render email delivery specifically
-  @Post('test/render-email')
-  async testRenderEmailDelivery() {
-    try {
-      console.log('🧪 Testing Render email delivery system...');
-      
-      // Use the enhanced test method from Gmail service
-      const result = await this.staffService['gmailService'].testRenderEmailDelivery();
-      
-      return {
-        message: 'Render email delivery test completed',
-        ...result,
-        timestamp: new Date().toISOString(),
-        environment: {
-          nodeEnv: process.env.NODE_ENV || 'development',
-          isRender: process.env.RENDER === 'true',
-          isVercel: process.env.VERCEL === '1',
-          renderServiceName: process.env.RENDER_SERVICE_NAME || 'business-loan-backend'
-        }
-      };
-    } catch (error) {
-      console.error('❌ Render email test failed:', error);
-      return {
-        message: 'Render email delivery test failed',
-        success: false,
-        method: 'Error',
-        error: error.message,
-        timestamp: new Date().toISOString(),
-        status: 'ERROR'
-      };
-    }
-  }
 
   // Test full staff creation with email
   @Post('test/create-with-email')

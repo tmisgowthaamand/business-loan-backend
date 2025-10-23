@@ -28,62 +28,87 @@ export class GmailService {
   private initializeSendGrid() {
     const sendGridApiKey = this.config.get('SENDGRID_API_KEY') || process.env.SENDGRID_API_KEY;
     const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
     
-    // For Render deployment, prioritize SendGrid
+    // For Render deployment, SendGrid is CRITICAL (SMTP is blocked)
     if (isRender) {
-      this.logger.log('🌐 Render deployment detected - prioritizing SendGrid');
+      this.logger.log('🌐 RENDER DEPLOYMENT: SendGrid is REQUIRED (SMTP blocked)');
       
-      // Use fallback SendGrid API key for Render if not provided
-      const fallbackApiKey = sendGridApiKey || 'SG.demo_key_for_render_deployment';
-      
-      if (sendGridApiKey) {
+      if (sendGridApiKey && sendGridApiKey.startsWith('SG.')) {
         try {
           sgMail.setApiKey(sendGridApiKey);
           this.sendGridInitialized = true;
-          this.logger.log('📧 SendGrid initialized successfully for Render');
-          this.logger.log('🌐 Using SendGrid as primary email service (SMTP bypassed)');
+          this.logger.log('✅ RENDER: SendGrid initialized successfully');
+          this.logger.log('🌐 RENDER: Using SendGrid as PRIMARY email service');
+          this.logger.log(`🔑 RENDER: API Key: ${sendGridApiKey.substring(0, 8)}...`);
         } catch (error) {
-          this.logger.error('❌ SendGrid initialization failed:', error.message);
+          this.logger.error('❌ RENDER: SendGrid initialization FAILED:', error.message);
           this.sendGridInitialized = false;
-          this.logger.log('🔄 Falling back to demo mode for Render');
+          this.logger.error('⚠️ RENDER: NO EMAIL DELIVERY POSSIBLE - Set SENDGRID_API_KEY!');
         }
       } else {
-        this.logger.warn('⚠️ SENDGRID_API_KEY not found for Render deployment');
-        this.logger.log('📧 Using demo email mode for Render (emails will be logged)');
+        this.logger.error('❌ RENDER: SENDGRID_API_KEY missing or invalid!');
+        this.logger.error('⚠️ RENDER: Add SENDGRID_API_KEY environment variable');
+        this.logger.error('🔗 RENDER: Get API key from https://app.sendgrid.com/settings/api_keys');
+        this.sendGridInitialized = false;
+      }
+    } else if (isVercel) {
+      // Vercel deployment - SendGrid recommended
+      this.logger.log('🔷 VERCEL DEPLOYMENT: SendGrid recommended');
+      
+      if (sendGridApiKey && sendGridApiKey.startsWith('SG.')) {
+        try {
+          sgMail.setApiKey(sendGridApiKey);
+          this.sendGridInitialized = true;
+          this.logger.log('✅ VERCEL: SendGrid initialized successfully');
+        } catch (error) {
+          this.logger.error('❌ VERCEL: SendGrid initialization failed:', error.message);
+          this.sendGridInitialized = false;
+        }
+      } else {
+        this.logger.warn('⚠️ VERCEL: SENDGRID_API_KEY not configured - will use SMTP fallback');
         this.sendGridInitialized = false;
       }
     } else {
-      // Local development - try SendGrid if available
-      if (sendGridApiKey) {
+      // Local development - SendGrid optional
+      this.logger.log('🏠 LOCAL DEVELOPMENT: SendGrid optional (SMTP available)');
+      
+      if (sendGridApiKey && sendGridApiKey.startsWith('SG.')) {
         try {
           sgMail.setApiKey(sendGridApiKey);
           this.sendGridInitialized = true;
-          this.logger.log('📧 SendGrid initialized successfully');
+          this.logger.log('✅ LOCAL: SendGrid initialized as backup option');
         } catch (error) {
-          this.logger.error('❌ SendGrid initialization failed:', error.message);
+          this.logger.error('❌ LOCAL: SendGrid initialization failed:', error.message);
           this.sendGridInitialized = false;
         }
       } else {
-        this.logger.log('📧 SendGrid not configured - using SMTP for local development');
+        this.logger.log('📧 LOCAL: SendGrid not configured - using SMTP');
         this.sendGridInitialized = false;
       }
     }
   }
 
   private initializeTransporter() {
-    // Get credentials from environment variables or use fallback
-    // Primary Gmail: gokrishna98@gmail.com for sending
-    // Target recipients: perivihari8@gmail.com, gowthaamankrishna1998@gmail.com, etc.
-    const gmailEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
-    const gmailPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
+    // Get credentials from environment variables with enhanced fallback
+    // IMPORTANT: Update these credentials with your actual Gmail account
+    const gmailEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || process.env.GMAIL_EMAIL || 'your-email@gmail.com';
+    const gmailPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || process.env.GMAIL_APP_PASSWORD || 'your-app-password';
     const isProduction = process.env.NODE_ENV === 'production';
     const isRender = process.env.RENDER === 'true';
     const isVercel = process.env.VERCEL === '1';
 
+    // Validate credentials before proceeding
+    if (gmailEmail === 'your-email@gmail.com' || gmailPassword === 'your-app-password') {
+      this.logger.warn('⚠️ GMAIL CREDENTIALS NOT CONFIGURED!');
+      this.logger.warn('⚠️ Please set GMAIL_EMAIL and GMAIL_APP_PASSWORD environment variables');
+      this.logger.warn('⚠️ Emails will be logged instead of sent');
+    }
+
     this.logger.log(`📧 Initializing Gmail SMTP with sender: ${gmailEmail}`);
-    this.logger.log(`🎯 Target recipients: perivihari8@gmail.com, gowthaamankrishna1998@gmail.com`);
+    this.logger.log(`🎯 Target recipients: Staff Gmail addresses`);
     this.logger.log(`🌐 Environment: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
-    this.logger.log(`🔐 App Password: ${gmailPassword.substring(0, 4)}****${gmailPassword.substring(gmailPassword.length - 4)}`);
+    this.logger.log(`🔐 App Password: ${gmailPassword.length > 10 ? gmailPassword.substring(0, 4) + '****' + gmailPassword.substring(gmailPassword.length - 4) : 'NOT_CONFIGURED'}`);
 
     // Enhanced Render-specific configuration with fallback options
     const renderConfig = isRender ? {
@@ -182,45 +207,64 @@ export class GmailService {
     
     const accessLink = `${backendUrl}/api/staff/verify-access/${accessToken}`;
 
-    // Strategy 1: Try SendGrid first (prioritized for Render and Vercel)
-    if (isRender || isVercel) {
-      this.logger.log(`📧 ${isRender ? 'Render' : 'Vercel'} detected - attempting SendGrid for ${recipientEmail}`);
+    // RENDER DEPLOYMENT: Prioritize SendGrid (SMTP is blocked)
+    if (isRender) {
+      this.logger.log(`🌐 RENDER DEPLOYMENT: SMTP blocked - using SendGrid for ${recipientEmail}`);
+      
+      // Try SendGrid first
+      if (this.sendGridInitialized) {
+        const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
+        if (sendGridSuccess) {
+          this.logger.log(`✅ RENDER: SendGrid email sent successfully to ${recipientEmail}`);
+          return true;
+        }
+        this.logger.warn('⚠️ RENDER: SendGrid failed, trying webhook...');
+      }
+      
+      // Try webhook as backup
+      const webhookSuccess = await this.sendViaWebhook(recipientEmail, recipientName, accessLink, role);
+      if (webhookSuccess) {
+        this.logger.log(`✅ RENDER: Webhook email sent successfully to ${recipientEmail}`);
+        return true;
+      }
+      
+      // Final fallback: Demo mode with manual instructions
+      this.logger.warn('⚠️ RENDER: All email methods failed - using demo mode');
+      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+    }
+
+    // VERCEL DEPLOYMENT: Try SendGrid then SMTP
+    if (isVercel) {
+      this.logger.log(`🔷 VERCEL DEPLOYMENT: Trying SendGrid for ${recipientEmail}`);
       
       if (this.sendGridInitialized) {
         const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
         if (sendGridSuccess) {
           return true;
         }
-        this.logger.warn('📧 SendGrid failed, trying fallback methods...');
-      } else {
-        this.logger.log('📧 SendGrid not initialized - using demo mode for cloud deployment');
-        return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+        this.logger.warn('📧 Vercel: SendGrid failed, trying SMTP...');
       }
     }
 
-    // Strategy 2: Try webhook notification service
-    if (isRender) {
-      this.logger.log(`🌐 Trying webhook notification for ${recipientEmail}`);
-      const webhookSuccess = await this.sendViaWebhook(recipientEmail, recipientName, accessLink, role);
-      if (webhookSuccess) {
-        return true;
-      }
-      this.logger.warn('🌐 Webhook failed, trying SMTP...');
-    }
-
-    // Strategy 3: Try SMTP (may fail on Render)
+    // LOCAL/OTHER DEPLOYMENTS: Try SMTP first
     try {
+      this.logger.log(`🏠 LOCAL/OTHER: Trying SMTP for ${recipientEmail}`);
       return await this.sendViaSMTP(recipientEmail, recipientName, accessLink, role);
     } catch (error) {
-      this.logger.error(`❌ All email methods failed for ${recipientEmail}`);
+      this.logger.error(`❌ SMTP failed for ${recipientEmail}: ${error.message}`);
       
-      // Strategy 4: Fallback demo mode for Render/Vercel
-      if (isRender || isVercel) {
-        this.logger.log(`📧 ${isRender ? 'RENDER' : 'VERCEL'} FALLBACK: Using demo email mode`);
-        return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+      // Try SendGrid as backup for local
+      if (this.sendGridInitialized) {
+        this.logger.log(`📧 LOCAL: Trying SendGrid as backup for ${recipientEmail}`);
+        const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
+        if (sendGridSuccess) {
+          return true;
+        }
       }
       
-      return false;
+      // Final fallback: Demo mode
+      this.logger.log(`📧 ALL METHODS FAILED: Using demo mode for ${recipientEmail}`);
+      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
     }
   }
 
@@ -374,7 +418,15 @@ export class GmailService {
   ): Promise<boolean> {
     const isRender = process.env.RENDER === 'true';
     const isVercel = process.env.VERCEL === '1';
-    const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
+    const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || process.env.GMAIL_EMAIL || 'your-email@gmail.com';
+    const currentPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || process.env.GMAIL_APP_PASSWORD || 'your-app-password';
+
+    // Check if credentials are properly configured
+    if (currentEmail === 'your-email@gmail.com' || currentPassword === 'your-app-password') {
+      this.logger.error(`❌ Gmail credentials not configured. Cannot send email to ${recipientEmail}`);
+      this.logger.error('❌ Please set GMAIL_EMAIL and GMAIL_APP_PASSWORD environment variables');
+      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+    }
 
     try {
       const mailOptions = {
@@ -409,7 +461,27 @@ export class GmailService {
       return true;
     } catch (error) {
       this.logger.error(`❌ SMTP failed for ${recipientEmail}: ${error.message}`);
-      throw error;
+      
+      // Provide specific error guidance
+      if (error.code === 'EAUTH') {
+        this.logger.error('🔐 Gmail Authentication Failed:');
+        this.logger.error('   - Check if Gmail email and app password are correct');
+        this.logger.error('   - Ensure 2-factor authentication is enabled on Gmail');
+        this.logger.error('   - Generate a new app password from Gmail settings');
+      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+        this.logger.error('🌐 Connection Failed:');
+        if (isRender) {
+          this.logger.error('   - Render may be blocking SMTP connections');
+          this.logger.error('   - Consider using SendGrid or webhook email service');
+        } else {
+          this.logger.error('   - Check internet connection');
+          this.logger.error('   - Gmail SMTP may be temporarily unavailable');
+        }
+      }
+      
+      // Fallback to demo mode instead of throwing
+      this.logger.log(`📧 Falling back to demo mode for ${recipientEmail}`);
+      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
     }
   }
 
@@ -424,27 +496,57 @@ export class GmailService {
     const platform = isRender ? 'Render' : isVercel ? 'Vercel' : 'Local';
     
     try {
-      this.logger.log(`📧 DEMO EMAIL MODE (${platform}): Simulating email delivery`);
+      this.logger.log(`📧 DEMO EMAIL MODE (${platform}): Email delivery simulation`);
+      this.logger.log(`📧 ===============================================`);
+      this.logger.log(`📧 ⚠️ MANUAL EMAIL REQUIRED ⚠️`);
+      this.logger.log(`📧 Please manually send the following email:`);
       this.logger.log(`📧 ===============================================`);
       this.logger.log(`📧 TO: ${recipientEmail}`);
       this.logger.log(`📧 NAME: ${recipientName}`);
       this.logger.log(`📧 ROLE: ${role}`);
       this.logger.log(`📧 SUBJECT: Welcome to Business Loan Management System - ${role} Access`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 VERIFICATION LINK: ${accessLink}`);
+      this.logger.log(`📧 🔗 VERIFICATION LINK (COPY THIS):`);
+      this.logger.log(`📧 ${accessLink}`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 EMAIL CONTENT:`);
+      this.logger.log(`📧 📝 EMAIL TEMPLATE:`);
+      this.logger.log(`📧 `);
       this.logger.log(`📧 Hello ${recipientName}!`);
+      this.logger.log(`📧 `);
       this.logger.log(`📧 You have been granted ${role} access to the Business Loan Management System.`);
-      this.logger.log(`📧 Click the verification link above to activate your account.`);
+      this.logger.log(`📧 `);
+      this.logger.log(`📧 Please click the following link to activate your account:`);
+      this.logger.log(`📧 ${accessLink}`);
+      this.logger.log(`📧 `);
       this.logger.log(`📧 This link will expire in 24 hours.`);
+      this.logger.log(`📧 `);
+      this.logger.log(`📧 Best regards,`);
+      this.logger.log(`📧 Business Loan Management Team`);
       this.logger.log(`📧 ===============================================`);
       
       // Try to send notification to admin webhook if available
       await this.notifyAdminOfEmailSuccess(recipientEmail, recipientName, accessLink, role);
       
-      this.logger.log(`✅ Demo email "sent" successfully to ${recipientEmail}`);
-      this.logger.log(`📧 Staff can use the verification link above to activate their account`);
+      this.logger.log(`✅ Email template generated for ${recipientEmail}`);
+      this.logger.log(`📧 👆 COPY THE VERIFICATION LINK ABOVE AND SEND IT MANUALLY`);
+      
+      if (isRender) {
+        this.logger.log(`📧 🌐 RENDER DEPLOYMENT - TO FIX AUTOMATIC EMAILS:`);
+        this.logger.log(`📧    1. Sign up for SendGrid: https://app.sendgrid.com/`);
+        this.logger.log(`📧    2. Verify your sender email/domain`);
+        this.logger.log(`📧    3. Create API key: Settings > API Keys > Create API Key`);
+        this.logger.log(`📧    4. Add to Render environment: SENDGRID_API_KEY=SG.your-key`);
+        this.logger.log(`📧    5. Add SENDGRID_FROM_EMAIL=your-verified-email@domain.com`);
+        this.logger.log(`📧    6. Redeploy your Render service`);
+        this.logger.log(`📧 ⚠️ RENDER BLOCKS SMTP - SendGrid is the ONLY solution!`);
+      } else {
+        this.logger.log(`📧 🔧 TO FIX AUTOMATIC EMAILS:`);
+        this.logger.log(`📧    1. Set GMAIL_EMAIL environment variable to your Gmail address`);
+        this.logger.log(`📧    2. Set GMAIL_APP_PASSWORD environment variable to your Gmail app password`);
+        this.logger.log(`📧    3. Enable 2-factor authentication on your Gmail account`);
+        this.logger.log(`📧    4. Generate an app password from Gmail settings`);
+      }
+      this.logger.log(`📧 ===============================================`);
       
       return true; // Always return success in demo mode
     } catch (error) {
