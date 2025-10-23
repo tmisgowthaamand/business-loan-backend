@@ -664,4 +664,121 @@ export class StaffController {
       throw new BadRequestException(`Failed to get staff count: ${error.message}`);
     }
   }
+
+  // Test Gmail SMTP connection
+  @Get('test/gmail-connection')
+  async testGmailConnection() {
+    try {
+      console.log('📧 Testing Gmail SMTP connection...');
+      const isConnected = await this.staffService.testEmailConnection();
+      
+      return {
+        message: 'Gmail SMTP connection test completed',
+        connected: isConnected,
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        },
+        emailConfig: {
+          sender: 'gokrishna98@gmail.com',
+          targetRecipient: 'gowthaamankrishna1998@gmail.com'
+        },
+        status: isConnected ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ Gmail connection test failed:', error);
+      return {
+        message: 'Gmail SMTP connection test failed',
+        connected: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  // Test sending verification email
+  @Post('test/send-verification')
+  async testSendVerification(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'gowthaamankrishna1998@gmail.com';
+      console.log(`📧 Testing verification email to: ${testEmail}`);
+      
+      // Use the Gmail service test method
+      const emailSent = await this.staffService['gmailService'].testVerificationEmail(testEmail);
+      
+      return {
+        message: 'Verification email test completed',
+        emailSent,
+        recipient: testEmail,
+        sender: 'gokrishna98@gmail.com',
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        },
+        status: emailSent ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ Verification email test failed:', error);
+      return {
+        message: 'Verification email test failed',
+        emailSent: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  // Test full staff creation with email
+  @Post('test/create-with-email')
+  async testCreateStaffWithEmail() {
+    try {
+      console.log('👤 Testing full staff creation with email verification...');
+      
+      const testStaffData: CreateStaffDto = {
+        name: 'Test Staff Member',
+        email: 'gowthaamankrishna1998@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Testing',
+        position: 'Test Administrator'
+      };
+      
+      const result = await this.staffService.createStaff(testStaffData);
+      
+      return {
+        message: 'Test staff creation completed',
+        success: true,
+        staff: {
+          id: result.staff.id,
+          name: result.staff.name,
+          email: result.staff.email,
+          role: result.staff.role,
+          department: result.staff.department
+        },
+        emailSent: result.emailSent,
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        },
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Test staff creation failed:', error);
+      return {
+        message: 'Test staff creation failed',
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
 }

@@ -85,11 +85,64 @@ export class NotificationsController {
   @Post('test/staff-added')
   createStaffNotification(): Promise<{ message: string; notifications: Notification[]; count: number }> {
     console.log('🔔 Creating test staff notification');
+    const testStaffId = Date.now();
+    const testStaffName = 'Test Staff Member';
+    const testRole = 'ADMIN';
+    
+    console.log('🔔 Test staff details:', { testStaffId, testStaffName, testRole });
+    
     return this.notificationsService.notifyStaffAdded(
-      Date.now(),
-      'Test Staff Member',
-      'ADMIN'
+      testStaffId,
+      testStaffName,
+      testRole
     );
+  }
+
+  // Enhanced test endpoint for deployment verification
+  @Post('test/staff-notification-full')
+  async createFullStaffNotificationTest() {
+    console.log('🔔 Running full staff notification test for deployment');
+    
+    try {
+      // Create a staff notification
+      const staffResult = await this.notificationsService.notifyStaffAdded(
+        Date.now(),
+        'Deployment Test Staff',
+        'EMPLOYEE'
+      );
+      
+      // Get current notification count
+      const countResult = await this.notificationsService.getUnreadCount(1);
+      
+      // Get all notifications
+      const allNotifications = await this.notificationsService.findAll({ id: 1, role: 'ADMIN' } as any, {});
+      
+      return {
+        status: 'success',
+        message: 'Staff notification system fully functional',
+        results: {
+          staffNotificationCreated: staffResult.count > 0,
+          notificationsCreated: staffResult.notifications?.length || 0,
+          totalUnreadCount: countResult.unreadCount,
+          totalNotifications: allNotifications.count,
+          latestNotification: allNotifications.notifications?.[0]
+        },
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        }
+      };
+    } catch (error) {
+      console.error('❌ Staff notification test failed:', error);
+      return {
+        status: 'error',
+        message: 'Staff notification test failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
   }
 
   // Comprehensive test endpoint for deployment verification

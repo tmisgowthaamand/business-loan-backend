@@ -75,6 +75,13 @@ export class NotificationsService {
     this.loadNotifications();
     
     this.logger.log(`🔔 Loaded ${this.notifications.length} notifications for deployment`);
+    
+    // Log deployment readiness
+    this.logger.log('🔔 Notification system deployment status:');
+    this.logger.log(`   - File persistence: ${this.dataDir}`);
+    this.logger.log(`   - Mock users: ${this.mockUsers.length}`);
+    this.logger.log(`   - Sample notifications: ${this.notifications.length}`);
+    this.logger.log('🔔 Ready for staff notification creation!');
   }
 
   private ensureDataDirectory() {
@@ -757,8 +764,9 @@ export class NotificationsService {
     });
     
     console.log('🔔 Creating staff notification for:', staffName, 'Role:', role);
+    console.log('🔔 Current notifications count before creation:', this.notifications.length);
     
-    return this.createSystemNotification({
+    const result = await this.createSystemNotification({
       type: 'STAFF_ADDED',
       title: 'New Staff Member Added',
       message: `👤 ${staffName} has been added as ${role} on ${currentDate} at ${currentTime} - Staff management system updated`,
@@ -778,6 +786,14 @@ export class NotificationsService {
       },
       priority: 'MEDIUM',
     });
+    
+    console.log('🔔 Staff notification created successfully. Total notifications now:', this.notifications.length);
+    console.log('🔔 Created notifications for', result.count, 'admin users');
+    
+    // Force save to file for deployment persistence
+    this.saveNotifications();
+    
+    return result;
   }
 
   // New method for enquiry assignment notifications
