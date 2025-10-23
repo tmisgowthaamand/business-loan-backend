@@ -382,20 +382,23 @@ export class StaffService {
     try {
       this.logger.log(`👤 Creating new staff member: ${createStaffDto.email} (${createStaffDto.role})`);
       
+      // Automatic cleanup: Maintain exactly 7 default staff members before creating new one
+      await this.maintainDefaultStaffCount();
+      
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(createStaffDto.email)) {
         throw new Error('Invalid email format. Please provide a valid email address (e.g., user@example.com)');
       }
 
-      // Check if email already exists in both Supabase and memory
-      const { data: existingUsers } = await this.supabaseService.client
+      // Check if email already exists in Supabase
+      const { data: existingUser, error: selectError } = await this.supabaseService.client
         .from('User')
-        .select('id, email')
+        .select('email')
         .eq('email', createStaffDto.email)
         .limit(1);
 
-      if (existingUsers && existingUsers.length > 0) {
+      if (!selectError && existingUser && existingUser.length > 0) {
         throw new Error('Email already exists in database. Please use a different email address.');
       }
 
@@ -1738,6 +1741,125 @@ export class StaffService {
         method: 'Error',
         details: `Email test error: ${error.message}`
       };
+    }
+  }
+
+  // Maintain exactly 7 default staff members
+  async maintainDefaultStaffCount(): Promise<void> {
+    try {
+      const defaultStaffEmails = [
+        'gowthaamankrishna1998@gmail.com',
+        'gowthaamaneswar1998@gmail.com', 
+        'newacttmis@gmail.com',
+        'dinesh@gmail.com',
+        'tmsnunciya59@gmail.com',
+        'admin@businessloan.com',
+        'admin@gmail.com'
+      ];
+
+      // Count current default staff
+      const currentDefaultStaff = this.staff.filter(s => defaultStaffEmails.includes(s.email));
+      const currentTotal = this.staff.length;
+
+      this.logger.log(`🔧 Staff maintenance check: ${currentTotal} total, ${currentDefaultStaff.length} default staff`);
+
+      // If we have more than 7 staff, remove non-default ones
+      if (currentTotal > 7) {
+        const nonDefaultStaff = this.staff.filter(s => !defaultStaffEmails.includes(s.email));
+        const toRemove = currentTotal - 7;
+        
+        this.logger.log(`🧹 Removing ${toRemove} non-default staff members to maintain 7 total`);
+        
+        // Remove oldest non-default staff first
+        const staffToRemove = nonDefaultStaff
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          .slice(0, toRemove);
+
+        for (const staff of staffToRemove) {
+          const index = this.staff.findIndex(s => s.id === staff.id);
+          if (index !== -1) {
+            this.staff.splice(index, 1);
+            this.logger.log(`🗑️ Auto-removed staff: ${staff.name} (${staff.email})`);
+          }
+        }
+
+        this.saveStaffToFile();
+      }
+
+      // If we have less than 7 default staff, reinitialize
+      if (currentDefaultStaff.length < 7) {
+        this.logger.log(`⚠️ Missing default staff members. Reinitializing to ensure all 7 are present.`);
+        await this.resetToDefaultStaff();
+      }
+
+    } catch (error) {
+      this.logger.error('Error maintaining default staff count:', error);
+    }
+  }
+
+  // Reset to exactly 7 default staff members
+  async resetToDefaultStaff(): Promise<{ message: string; staffCount: number; resetStaff: any[] }> {
+    try {
+      this.logger.log('🔄 Resetting to exactly 7 default staff members...');
+      
+      // Clear current staff
+      this.staff = [];
+      
+      // Reinitialize with default 7 staff
+      this.initializeDefaultStaff();
+      
+      // Save to file
+      this.saveStaffToFile();
+      
+      // Clear Supabase and sync new default staff
+      try {
+        await this.clearSupabaseAndSyncLocal();
+      } catch (error) {
+        this.logger.warn('Could not sync to Supabase, but local reset completed:', error.message);
+      }
+
+      const resetStaff = this.staff.map(s => ({
+        id: s.id,
+        name: s.name,
+        email: s.email,
+        role: s.role,
+        department: s.department,
+        status: s.status
+      }));
+
+      this.logger.log(`✅ Successfully reset to ${this.staff.length} default staff members`);
+      
+      return {
+        message: 'Successfully reset to 7 default staff members',
+        staffCount: this.staff.length,
+        resetStaff
+      };
+    } catch (error) {
+      this.logger.error('Error resetting to default staff:', error);
+      throw error;
+    }
+  }
+
+  // Auto-cleanup method to be called periodically
+  async autoCleanupStaff(): Promise<{ cleaned: number; maintained: number }> {
+    try {
+      this.logger.log('🧹 Starting automatic staff cleanup...');
+      
+      const beforeCount = this.staff.length;
+      await this.maintainDefaultStaffCount();
+      const afterCount = this.staff.length;
+      
+      const cleaned = beforeCount - afterCount;
+      
+      this.logger.log(`✅ Auto-cleanup completed: ${cleaned} staff removed, ${afterCount} maintained`);
+      
+      return {
+        cleaned,
+        maintained: afterCount
+      };
+    } catch (error) {
+      this.logger.error('Error in auto-cleanup:', error);
+      throw error;
     }
   }
 }

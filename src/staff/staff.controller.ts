@@ -728,12 +728,13 @@ export class StaffController {
     }
   }
 
-  // Test sending verification email
+  // Test sending verification email to specific recipient
   @Post('test/send-verification')
   async testSendVerification(@Body() body: { email?: string }) {
     try {
-      const testEmail = body.email || 'gowthaamankrishna1998@gmail.com';
+      const testEmail = body.email || 'perivihari8@gmail.com';
       console.log(`📧 Testing verification email to: ${testEmail}`);
+      console.log(`📧 Sender: gokrishna98@gmail.com`);
       
       // Use the Gmail service test method
       const emailSent = await this.staffService['gmailService'].testVerificationEmail(testEmail);
@@ -749,13 +750,106 @@ export class StaffController {
           isRender: process.env.RENDER === 'true',
           isVercel: process.env.VERCEL === '1'
         },
-        status: emailSent ? 'SUCCESS' : 'FAILED'
+        status: emailSent ? 'SUCCESS' : 'FAILED',
+        note: emailSent ? 'Check recipient inbox for verification email' : 'Email delivery failed - check logs for details'
       };
     } catch (error) {
       console.error('❌ Verification email test failed:', error);
       return {
         message: 'Verification email test failed',
         emailSent: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  // Test email delivery to all staff members
+  @Post('test/email-delivery-all')
+  async testEmailDeliveryToAllStaff() {
+    try {
+      console.log('📧 Testing email delivery to all staff members...');
+      
+      const result = await this.staffService['gmailService'].testEmailDeliveryToStaff();
+      
+      return {
+        message: 'Email delivery test to all staff completed',
+        success: result.success,
+        summary: result.summary,
+        results: result.results,
+        sender: 'gokrishna98@gmail.com',
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        },
+        status: result.success ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ Email delivery test failed:', error);
+      return {
+        message: 'Email delivery test failed',
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  // Test email specifically for Render deployment issues
+  @Post('test/render-email-fix')
+  async testRenderEmailFix(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'perivihari8@gmail.com';
+      console.log('🌐 Testing Render email delivery fix...');
+      console.log(`📧 Target: ${testEmail}`);
+      console.log(`📧 Sender: gokrishna98@gmail.com`);
+      
+      const isRender = process.env.RENDER === 'true';
+      
+      if (!isRender) {
+        console.log('⚠️ Not in Render environment - testing local SMTP');
+      }
+      
+      // Test connection first
+      const connectionTest = await this.staffService.testEmailConnection();
+      
+      // Then test actual email sending
+      const emailSent = await this.staffService['gmailService'].testVerificationEmail(testEmail);
+      
+      return {
+        message: 'Render email delivery test completed',
+        environment: {
+          isRender,
+          nodeEnv: process.env.NODE_ENV || 'development',
+          renderServiceName: process.env.RENDER_SERVICE_NAME || 'not-set'
+        },
+        connectionTest: {
+          connected: connectionTest,
+          status: connectionTest ? 'SMTP Connection OK' : 'SMTP Connection Failed'
+        },
+        emailTest: {
+          sent: emailSent,
+          recipient: testEmail,
+          sender: 'gokrishna98@gmail.com',
+          status: emailSent ? 'Email Sent Successfully' : 'Email Send Failed'
+        },
+        timestamp: new Date().toISOString(),
+        status: emailSent ? 'SUCCESS' : 'FAILED',
+        troubleshooting: {
+          smtpBlocked: !connectionTest && isRender,
+          recommendation: !connectionTest && isRender ? 
+            'SMTP may be blocked by Render. Check logs for fallback methods.' : 
+            'Email system appears to be working correctly.'
+        }
+      };
+    } catch (error) {
+      console.error('❌ Render email test failed:', error);
+      return {
+        message: 'Render email test failed',
         error: error.message,
         timestamp: new Date().toISOString(),
         status: 'ERROR'
@@ -841,6 +935,121 @@ export class StaffController {
         timestamp: new Date().toISOString(),
         status: 'ERROR'
       };
+    }
+  }
+
+  // Reset to exactly 7 default staff members
+  @Post('reset-to-default')
+  async resetToDefaultStaff() {
+    try {
+      console.log('🔄 Resetting staff to exactly 7 default members...');
+      const result = await this.staffService.resetToDefaultStaff();
+      
+      return {
+        message: result.message,
+        staffCount: result.staffCount,
+        resetStaff: result.resetStaff,
+        timestamp: new Date().toISOString(),
+        operation: 'reset-to-default-7',
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Reset to default staff failed:', error);
+      throw new BadRequestException(`Failed to reset staff: ${error.message}`);
+    }
+  }
+
+  // Auto-cleanup staff to maintain 7 members
+  @Post('auto-cleanup')
+  async autoCleanupStaff() {
+    try {
+      console.log('🧹 Running automatic staff cleanup...');
+      const result = await this.staffService.autoCleanupStaff();
+      
+      return {
+        message: 'Automatic staff cleanup completed',
+        cleaned: result.cleaned,
+        maintained: result.maintained,
+        timestamp: new Date().toISOString(),
+        operation: 'auto-cleanup',
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Auto-cleanup failed:', error);
+      throw new BadRequestException(`Failed to cleanup staff: ${error.message}`);
+    }
+  }
+
+  // Maintain default staff count (manual trigger)
+  @Post('maintain-default-count')
+  async maintainDefaultStaffCount() {
+    try {
+      console.log('🔧 Manually triggering staff count maintenance...');
+      await this.staffService.maintainDefaultStaffCount();
+      
+      const currentStaff = await this.staffService.getAllStaff();
+      
+      return {
+        message: 'Staff count maintenance completed',
+        currentStaffCount: currentStaff.length,
+        defaultStaffMaintained: currentStaff.filter(s => [
+          'gowthaamankrishna1998@gmail.com',
+          'gowthaamaneswar1998@gmail.com', 
+          'newacttmis@gmail.com',
+          'dinesh@gmail.com',
+          'tmsnunciya59@gmail.com',
+          'admin@businessloan.com',
+          'admin@gmail.com'
+        ].includes(s.email)).length,
+        timestamp: new Date().toISOString(),
+        operation: 'maintain-default-count',
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Maintain default count failed:', error);
+      throw new BadRequestException(`Failed to maintain staff count: ${error.message}`);
+    }
+  }
+
+  // Get staff count status
+  @Get('count-status')
+  async getStaffCountStatus() {
+    try {
+      const allStaff = await this.staffService.getAllStaff();
+      const defaultStaffEmails = [
+        'gowthaamankrishna1998@gmail.com',
+        'gowthaamaneswar1998@gmail.com', 
+        'newacttmis@gmail.com',
+        'dinesh@gmail.com',
+        'tmsnunciya59@gmail.com',
+        'admin@businessloan.com',
+        'admin@gmail.com'
+      ];
+      
+      const defaultStaff = allStaff.filter(s => defaultStaffEmails.includes(s.email));
+      const nonDefaultStaff = allStaff.filter(s => !defaultStaffEmails.includes(s.email));
+      
+      return {
+        message: 'Staff count status retrieved',
+        totalStaff: allStaff.length,
+        defaultStaff: defaultStaff.length,
+        nonDefaultStaff: nonDefaultStaff.length,
+        isOptimal: allStaff.length === 7 && defaultStaff.length === 7,
+        needsCleanup: allStaff.length > 7,
+        needsReset: defaultStaff.length < 7,
+        nonDefaultStaffList: nonDefaultStaff.map(s => ({
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          role: s.role,
+          createdAt: s.createdAt
+        })),
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Get staff count status failed:', error);
+      throw new BadRequestException(`Failed to get staff status: ${error.message}`);
     }
   }
 }

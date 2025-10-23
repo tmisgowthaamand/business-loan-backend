@@ -73,12 +73,17 @@ export class GmailService {
   private initializeTransporter() {
     // Get credentials from environment variables or use fallback
     // Primary Gmail: gokrishna98@gmail.com for sending
-    // Target recipient: gowthaamankrishna1998@gmail.com for receiving
+    // Target recipients: perivihari8@gmail.com, gowthaamankrishna1998@gmail.com, etc.
     const gmailEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
     const gmailPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
     const isProduction = process.env.NODE_ENV === 'production';
     const isRender = process.env.RENDER === 'true';
     const isVercel = process.env.VERCEL === '1';
+
+    this.logger.log(`📧 Initializing Gmail SMTP with sender: ${gmailEmail}`);
+    this.logger.log(`🎯 Target recipients: perivihari8@gmail.com, gowthaamankrishna1998@gmail.com`);
+    this.logger.log(`🌐 Environment: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
+    this.logger.log(`🔐 App Password: ${gmailPassword.substring(0, 4)}****${gmailPassword.substring(gmailPassword.length - 4)}`);
 
     // Enhanced Render-specific configuration with fallback options
     const renderConfig = isRender ? {
@@ -745,8 +750,9 @@ export class GmailService {
   }
 
   // Test method to send verification email to specific address
-  async testVerificationEmail(testEmail: string = 'gowthaamankrishna1998@gmail.com'): Promise<boolean> {
+  async testVerificationEmail(testEmail: string = 'perivihari8@gmail.com'): Promise<boolean> {
     this.logger.log(`📧 Testing verification email to: ${testEmail}`);
+    this.logger.log(`📧 Sender: gokrishna98@gmail.com`);
     
     return this.sendAccessLink(
       testEmail,
@@ -754,6 +760,88 @@ export class GmailService {
       'test_token_' + Date.now(),
       StaffRole.ADMIN
     );
+  }
+
+  // Enhanced email delivery test with real verification
+  async testEmailDeliveryToStaff(): Promise<{ 
+    success: boolean; 
+    results: Array<{
+      email: string;
+      name: string;
+      sent: boolean;
+      method: string;
+      error?: string;
+    }>;
+    summary: string;
+  }> {
+    const testRecipients = [
+      { email: 'perivihari8@gmail.com', name: 'Perivi' },
+      { email: 'gowthaamankrishna1998@gmail.com', name: 'Gowthaman' },
+      { email: 'gowthaamaneswar1998@gmail.com', name: 'Venkat' },
+      { email: 'newacttmis@gmail.com', name: 'Harish' },
+      { email: 'dinesh@gmail.com', name: 'Dinesh' }
+    ];
+
+    this.logger.log('📧 Starting comprehensive email delivery test...');
+    this.logger.log(`📧 Sender: gokrishna98@gmail.com`);
+    this.logger.log(`🎯 Testing delivery to ${testRecipients.length} recipients`);
+
+    const results = [];
+    let successCount = 0;
+
+    for (const recipient of testRecipients) {
+      this.logger.log(`📧 Testing email to: ${recipient.email} (${recipient.name})`);
+      
+      try {
+        const sent = await this.sendAccessLink(
+          recipient.email,
+          recipient.name,
+          `test_token_${Date.now()}_${recipient.name.toLowerCase()}`,
+          StaffRole.ADMIN
+        );
+
+        if (sent) {
+          successCount++;
+          results.push({
+            email: recipient.email,
+            name: recipient.name,
+            sent: true,
+            method: process.env.RENDER === 'true' ? 'Render-Optimized' : 'SMTP'
+          });
+          this.logger.log(`✅ Email sent successfully to ${recipient.email}`);
+        } else {
+          results.push({
+            email: recipient.email,
+            name: recipient.name,
+            sent: false,
+            method: 'Failed',
+            error: 'Email sending failed'
+          });
+          this.logger.error(`❌ Email failed to ${recipient.email}`);
+        }
+      } catch (error) {
+        results.push({
+          email: recipient.email,
+          name: recipient.name,
+          sent: false,
+          method: 'Error',
+          error: error.message
+        });
+        this.logger.error(`❌ Email error to ${recipient.email}:`, error.message);
+      }
+
+      // Add delay between emails to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    const summary = `${successCount}/${testRecipients.length} emails sent successfully`;
+    this.logger.log(`📊 Email delivery test completed: ${summary}`);
+
+    return {
+      success: successCount > 0,
+      results,
+      summary
+    };
   }
 
   // Enhanced test method specifically for Render deployment
