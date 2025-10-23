@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface Notification {
   id: string;
@@ -47,7 +49,14 @@ export interface EnquiryStatusData {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
   private notifications: Notification[] = [];
+  private readonly dataDir = path.join(process.cwd(), 'data');
+  private readonly notificationsFile = path.join(this.dataDir, 'notifications.json');
+  private readonly isProduction = process.env.NODE_ENV === 'production';
+  private readonly isRender = process.env.RENDER === 'true';
+  private readonly isVercel = process.env.VERCEL === '1';
+  
   private mockUsers: User[] = [
     { id: 1, role: 'ADMIN' },
     { id: 2, role: 'ADMIN' },
@@ -55,10 +64,55 @@ export class NotificationsService {
   ];
 
   constructor() {
-    console.log('🔔 NotificationsService initialized');
-    // Initialize with some sample notifications
-    this.createSampleNotifications();
-    console.log('🔔 Created', this.notifications.length, 'sample notifications');
+    this.logger.log('🔔 NotificationsService initialized for deployment');
+    this.logger.log(`🌐 Environment: ${this.isProduction ? 'Production' : 'Development'}`);
+    this.logger.log(`🚀 Platform: ${this.isRender ? 'Render' : this.isVercel ? 'Vercel' : 'Local'}`);
+    
+    // Ensure data directory exists
+    this.ensureDataDirectory();
+    
+    // Load existing notifications or create samples
+    this.loadNotifications();
+    
+    this.logger.log(`🔔 Loaded ${this.notifications.length} notifications for deployment`);
+  }
+
+  private ensureDataDirectory() {
+    try {
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        this.logger.log('📁 Created data directory for notifications persistence');
+      }
+    } catch (error) {
+      this.logger.error('Error creating data directory:', error);
+    }
+  }
+
+  private loadNotifications() {
+    try {
+      if (fs.existsSync(this.notificationsFile)) {
+        const data = fs.readFileSync(this.notificationsFile, 'utf8');
+        this.notifications = JSON.parse(data);
+        this.logger.log(`📋 Loaded ${this.notifications.length} notifications from file`);
+      } else {
+        this.logger.log('📋 No existing notifications file, creating sample notifications');
+        this.createSampleNotifications();
+        this.saveNotifications();
+      }
+    } catch (error) {
+      this.logger.error('Error loading notifications file, creating sample notifications:', error);
+      this.createSampleNotifications();
+      this.saveNotifications();
+    }
+  }
+
+  private saveNotifications() {
+    try {
+      fs.writeFileSync(this.notificationsFile, JSON.stringify(this.notifications, null, 2));
+      this.logger.log(`💾 Saved ${this.notifications.length} notifications to file`);
+    } catch (error) {
+      this.logger.error('Error saving notifications file:', error);
+    }
   }
 
   private createSampleNotifications() {
@@ -358,6 +412,8 @@ export class NotificationsService {
     if (notificationIndex !== -1) {
       this.notifications[notificationIndex].read = true;
       this.notifications[notificationIndex].readAt = new Date();
+      // Save to file for persistence
+      this.saveNotifications();
     }
 
     return {
@@ -377,6 +433,11 @@ export class NotificationsService {
       }
     });
 
+    if (updatedCount > 0) {
+      // Save to file for persistence
+      this.saveNotifications();
+    }
+
     return {
       message: 'All notifications marked as read',
       updatedCount,
@@ -388,6 +449,11 @@ export class NotificationsService {
     this.notifications = this.notifications.filter(n => !(n.id === id && n.userId === userId));
     const deleted = this.notifications.length < initialLength;
 
+    if (deleted) {
+      // Save to file for persistence
+      this.saveNotifications();
+    }
+
     return {
       message: 'Notification deleted successfully',
       deleted,
@@ -397,6 +463,25 @@ export class NotificationsService {
   // System notification methods (for creating notifications from other services)
   async createSystemNotification(data: SystemNotificationData) {
     console.log('🔔 Creating system notification:', data.type, '-', data.title);
+    
+    // Check for duplicate notifications (same type, title, and message within last 5 minutes)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const isDuplicate = this.notifications.some(notification => 
+      notification.type === data.type &&
+      notification.title === data.title &&
+      notification.message === data.message &&
+      new Date(notification.createdAt) > fiveMinutesAgo
+    );
+
+    if (isDuplicate) {
+      console.log('🔔 Duplicate notification detected, skipping creation');
+      return {
+        message: 'Duplicate notification skipped',
+        notifications: [],
+        count: 0,
+      };
+    }
+
     // Get all admin users to notify
     const adminUsers = this.mockUsers.filter(user => user.role === 'ADMIN');
     console.log('🔔 Notifying', adminUsers.length, 'admin users');
@@ -419,6 +504,9 @@ export class NotificationsService {
       return notification;
     });
 
+    // Save to file for persistence in production
+    this.saveNotifications();
+    
     console.log('🔔 Created', notifications.length, 'notifications. Total notifications now:', this.notifications.length);
     return {
       message: 'System notification created successfully',
@@ -660,29 +748,35 @@ export class NotificationsService {
       timeZone: 'Asia/Kolkata'
     });
     
+    const currentDate = new Date().toLocaleDateString('en-IN', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'Asia/Kolkata'
+    });
+    
+    console.log('🔔 Creating staff notification for:', staffName, 'Role:', role);
+    
     return this.createSystemNotification({
       type: 'STAFF_ADDED',
-      title: 'New Staff Member',
-      message: `${staffName} added as ${role} at ${currentTime}`,
+      title: 'New Staff Member Added',
+      message: `👤 ${staffName} has been added as ${role} on ${currentDate} at ${currentTime} - Staff management system updated`,
       data: { 
         staffId,
         staffName,
         role,
         addedAt: new Date().toISOString(),
         dateTime: {
-          date: new Date().toLocaleDateString('en-IN', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            timeZone: 'Asia/Kolkata'
-          }),
+          date: currentDate,
           time: currentTime,
           dayOfWeek: new Date().toLocaleDateString('en-IN', { weekday: 'long' }),
           timestamp: Date.now()
-        }
+        },
+        actionRequired: false,
+        category: 'staff_management'
       },
-      priority: 'LOW',
+      priority: 'MEDIUM',
     });
   }
 

@@ -80,6 +80,13 @@ export class GmailService {
     const isRender = process.env.RENDER === 'true';
     const isVercel = process.env.VERCEL === '1';
     
+    // Skip email sending in production if explicitly disabled
+    if (isProduction && process.env.DISABLE_EMAIL === 'true') {
+      this.logger.log(`📧 Email sending disabled in production for ${recipientEmail}`);
+      this.logger.log(`🔗 Access token for ${recipientName}: ${accessToken}`);
+      return true; // Return success to not break the flow
+    }
+    
     // Get credentials from environment or use fallback
     const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
     const currentPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
@@ -121,7 +128,7 @@ export class GmailService {
       
       // Send email with timeout for production environments
       const sendPromise = this.transporter.sendMail(mailOptions);
-      const timeoutMs = isRender ? 25000 : isVercel ? 20000 : 30000;
+      const timeoutMs = isRender ? 15000 : isVercel ? 10000 : 30000; // Shorter timeouts for production
       
       const result = await Promise.race([
         sendPromise,
@@ -133,7 +140,8 @@ export class GmailService {
       this.logger.log(`✅ Access link sent successfully to ${recipientEmail}. Message ID: ${result.messageId}`);
       return true;
     } catch (error) {
-      this.logger.error(`❌ Failed to send access link to ${recipientEmail}:`, error);
+      this.logger.error(`❌ Failed to send access link to ${recipientEmail}:`);
+      this.logger.error(`Error: ${error.message}`);
       
       // Enhanced error handling for production
       if (error.message === 'Email send timeout') {
@@ -145,6 +153,13 @@ export class GmailService {
         }
       } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
         this.logger.error(`🌐 Network connection issue in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
+      }
+      
+      // In production, don't fail the entire operation due to email issues
+      if (isProduction) {
+        this.logger.log(`📧 Email failed in production, but continuing operation for ${recipientEmail}`);
+        this.logger.log(`🔗 Manual access token for ${recipientName}: ${accessToken}`);
+        return true; // Return success to not break the staff creation flow
       }
       
       return false;

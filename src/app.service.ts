@@ -52,8 +52,9 @@ export class AppService implements OnModuleInit {
         shortlists: 'Shortlist management ready',
         payments: 'Payment gateway applications ready',
         transactions: 'Transaction management ready',
-        staff: '7 staff members ready',
-        notifications: 'Real-time notification system active'
+        staff: '7 staff members ready with notifications',
+        notifications: 'Real-time notification system with file persistence',
+        staffNotifications: 'Staff creation notifications enabled'
       },
       deploymentUrls: {
         frontend: process.env.FRONTEND_URL || 'https://business-loan-frontend.vercel.app',
@@ -66,10 +67,12 @@ export class AppService implements OnModuleInit {
         'Payment Gateway Applications',
         'Transaction Management',
         'Staff Management with Authentication',
-        'Real-time Notification System',
+        'Real-time Notification System with Persistence',
+        'Staff Creation Notifications (No Duplicates)',
+        'Notification Panel with Test Buttons',
         'Supabase Integration with Fallback',
         'File-based Persistence for All Data',
-        'Cross-platform Deployment Ready'
+        'Cross-platform Deployment Ready (Render + Vercel)'
       ]
     };
 

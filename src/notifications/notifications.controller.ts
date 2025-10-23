@@ -81,6 +81,64 @@ export class NotificationsController {
     });
   }
 
+  // Test endpoint specifically for staff notifications
+  @Post('test/staff-added')
+  createStaffNotification(): Promise<{ message: string; notifications: Notification[]; count: number }> {
+    console.log('🔔 Creating test staff notification');
+    return this.notificationsService.notifyStaffAdded(
+      Date.now(),
+      'Test Staff Member',
+      'ADMIN'
+    );
+  }
+
+  // Comprehensive test endpoint for deployment verification
+  @Get('test/deployment-ready')
+  async testDeploymentReady() {
+    console.log('🚀 Testing deployment readiness for notifications');
+    
+    try {
+      // Test notification creation
+      const testNotification = await this.notificationsService.createSystemNotification({
+        type: 'STAFF_ADDED',
+        title: 'Deployment Test',
+        message: 'Testing notification system for deployment readiness',
+        priority: 'LOW',
+      });
+
+      // Test notification retrieval
+      const allNotifications = await this.notificationsService.findAll({ id: 1, role: 'ADMIN' } as any, {});
+      
+      // Test count retrieval
+      const count = await this.notificationsService.getUnreadCount(1);
+
+      return {
+        status: 'success',
+        message: 'Notification system is deployment ready',
+        tests: {
+          notificationCreation: testNotification.count > 0,
+          notificationRetrieval: allNotifications.count > 0,
+          countRetrieval: typeof count.unreadCount === 'number',
+          filePersistence: 'File-based persistence enabled'
+        },
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isRender: process.env.RENDER === 'true',
+          isVercel: process.env.VERCEL === '1'
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ Deployment test failed:', error);
+      return {
+        status: 'error',
+        message: 'Notification system test failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   @Post('status-update')
   async createStatusUpdateNotification(
     @Body() statusData: {

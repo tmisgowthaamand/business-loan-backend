@@ -558,45 +558,49 @@ export class StaffService {
       
       const allStaff: Omit<StaffEntity, 'password'>[] = [];
 
-      // First, get staff from Supabase
+      // First, try to get staff from Supabase (optional for demo mode)
       try {
-        this.logger.log('📋 Fetching staff from Supabase...');
-        const { data: users, error } = await this.supabaseService.client
-          .from('User')
-          .select('*')
-          .order('createdAt', { ascending: false });
+        if (this.supabaseService && process.env.NODE_ENV === 'production') {
+          this.logger.log('📋 Fetching staff from Supabase (production mode)...');
+          const { data: users, error } = await this.supabaseService.client
+            .from('User')
+            .select('*')
+            .order('createdAt', { ascending: false });
 
-        if (!error && users && users.length > 0) {
-          // Convert Supabase users to StaffEntity format
-          const supabaseStaff: Omit<StaffEntity, 'password'>[] = users.map(user => {
-            const isActive = !user.inviteToken;
-            const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+          if (!error && users && users.length > 0) {
+            // Convert Supabase users to StaffEntity format
+            const supabaseStaff: Omit<StaffEntity, 'password'>[] = users.map(user => {
+              const isActive = !user.inviteToken;
+              const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+              
+              return {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role as StaffRole,
+                department: user.department || (user.role === 'ADMIN' ? 'Administration' : 'General'),
+                position: user.position || (user.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+                status: status,
+                hasAccess: isActive,
+                accessToken: user.inviteToken,
+                accessTokenExpiry: user.tokenExpiry ? new Date(user.tokenExpiry) : undefined,
+                createdAt: new Date(user.createdAt),
+                updatedAt: new Date(user.updatedAt || user.createdAt),
+                createdBy: 'Admin',
+                lastLogin: user.lastLogin ? new Date(user.lastLogin) : (isActive ? new Date() : undefined)
+              };
+            });
             
-            return {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              role: user.role as StaffRole,
-              department: user.department || (user.role === 'ADMIN' ? 'Administration' : 'General'),
-              position: user.position || (user.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
-              status: status,
-              hasAccess: isActive,
-              accessToken: user.inviteToken,
-              accessTokenExpiry: user.tokenExpiry ? new Date(user.tokenExpiry) : undefined,
-              createdAt: new Date(user.createdAt),
-              updatedAt: new Date(user.updatedAt || user.createdAt),
-              createdBy: 'Admin',
-              lastLogin: user.lastLogin ? new Date(user.lastLogin) : (isActive ? new Date() : undefined)
-            };
-          });
-          
-          allStaff.push(...supabaseStaff);
-          this.logger.log(`📋 Found ${supabaseStaff.length} staff members in Supabase`);
+            allStaff.push(...supabaseStaff);
+            this.logger.log(`📋 Found ${supabaseStaff.length} staff members in Supabase`);
+          } else {
+            this.logger.log('📋 No staff found in Supabase, using demo mode');
+          }
         } else {
-          this.logger.log('📋 No staff found in Supabase or error occurred');
+          this.logger.log('📋 Supabase disabled or demo mode - using in-memory staff');
         }
       } catch (supabaseError) {
-        this.logger.error('Error fetching from Supabase:', supabaseError);
+        this.logger.log('📋 Supabase connection failed, using demo mode:', supabaseError.message);
       }
 
       // Then, get staff from in-memory storage (excluding duplicates)

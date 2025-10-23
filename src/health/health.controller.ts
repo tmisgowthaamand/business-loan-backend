@@ -74,15 +74,24 @@ export class HealthController {
         payments: 'Payment gateway applications ready',
         transactions: 'Transaction management ready',
         staff: '7 staff members with authentication',
-        notifications: 'Real-time notification system active'
+        notifications: 'Real-time notification system with file persistence',
+        staffNotifications: 'Staff creation notifications enabled (no duplicates)'
       },
       allServicesReady: true,
       deploymentReady: true,
       environment: {
         nodeEnv: process.env.NODE_ENV || 'development',
         isRender: process.env.RENDER === 'true',
-        isVercel: process.env.VERCEL === '1'
-      }
+        isVercel: process.env.VERCEL === '1',
+        platform: process.env.RENDER === 'true' ? 'Render' : process.env.VERCEL === '1' ? 'Vercel' : 'Local'
+      },
+      features: [
+        'Staff Management with Real-time Notifications',
+        'Duplicate Prevention for Notifications',
+        'File-based Persistence for Production',
+        'Cross-platform Deployment Support',
+        'Test Endpoints for Notification Verification'
+      ]
     };
   }
 }
