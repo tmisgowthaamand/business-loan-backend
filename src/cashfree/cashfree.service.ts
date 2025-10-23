@@ -12,6 +12,7 @@ import { IdGeneratorService } from '../common/services/id-generator.service';
 import { ShortlistService } from '../shortlist/shortlist.service';
 import { CreateCashfreeApplicationDto } from './dto';
 import { User, CashfreeStatus } from '@prisma/client';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -27,6 +28,7 @@ export class CashfreeService {
     private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => ShortlistService))
     private shortlistService: ShortlistService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     console.log('🔄 CashfreeService constructor called');
     this.loadPayments();
@@ -304,9 +306,9 @@ export class CashfreeService {
       console.log('⚠️ Failed to create payment application notification:', error);
     }
 
-    // Sync to Supabase in background (non-blocking)
-    this.syncPaymentToSupabase(mockApplication).catch(error => {
-      console.error('❌ Failed to sync payment to Supabase:', error);
+    // Auto-sync to Supabase using unified sync service (non-blocking)
+    this.unifiedSupabaseSync.syncPaymentGateway(mockApplication).catch(error => {
+      console.error('❌ [DEPLOYMENT] Failed to sync payment to Supabase:', error);
     });
 
       return mockApplication;

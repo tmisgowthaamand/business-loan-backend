@@ -5,6 +5,7 @@ import { WebhookEmailService } from './webhook-email.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
@@ -25,6 +26,7 @@ export class StaffService {
     private supabaseService: SupabaseService,
     private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     // Initialize synchronously to avoid async issues
     this.initializeDefaultStaff();
@@ -467,9 +469,9 @@ export class StaffService {
         this.staff.push(newStaff);
         this.saveStaffToFile(); // Save to persistent storage
         
-        // Sync to Supabase staff table in background (non-blocking)
-        this.syncStaffToSupabase(newStaff).catch(error => {
-          this.logger.error('❌ Failed to sync staff to Supabase Staff table:', error);
+        // Auto-sync to Supabase using unified sync service (non-blocking)
+        this.unifiedSupabaseSync.syncStaff(newStaff).catch(error => {
+          this.logger.error('❌ [DEPLOYMENT] Failed to sync staff to Supabase:', error);
         });
         
         const { password, ...staffWithoutPassword } = newStaff;
@@ -1235,7 +1237,8 @@ export class StaffService {
     staff.updatedAt = new Date();
     this.saveStaffToFile(); // Save to persistent storage
 
-    // Generate JWT auth token
+    // Generate JWT auth token with environment-based secret
+    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-key-for-development';
     const authToken = jwt.sign(
       { 
         id: staff.id, 
@@ -1243,7 +1246,7 @@ export class StaffService {
         role: staff.role,
         name: staff.name
       },
-      'your-secret-key',
+      jwtSecret,
       { expiresIn: '7d' }
     );
 

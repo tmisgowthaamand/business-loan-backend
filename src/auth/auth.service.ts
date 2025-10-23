@@ -40,6 +40,11 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     console.log('🔐 Auth service login called with:', dto.email);
+    console.log('🌍 Environment:', {
+      nodeEnv: process.env.NODE_ENV,
+      isVercel: process.env.VERCEL === '1',
+      isRender: process.env.RENDER === 'true'
+    });
     
     try {
       // Use staff service to authenticate
@@ -50,10 +55,10 @@ export class AuthService {
         throw new ForbiddenException('Invalid credentials. Please check your email and password.');
       }
 
-      console.log('✅ Staff authenticated:', authResult.staff.name);
+      console.log('✅ Staff authenticated:', authResult.staff.name, '- Ready for deployment');
       
       // Return the auth token and user data in the expected format
-      return {
+      const response = {
         access_token: authResult.authToken,
         user: {
           id: authResult.staff.id,
@@ -62,9 +67,23 @@ export class AuthService {
           role: authResult.staff.role
         }
       };
+      
+      console.log('🚀 Login successful for deployment:', {
+        user: response.user.name,
+        role: response.user.role,
+        hasToken: !!response.access_token
+      });
+      
+      return response;
     } catch (error) {
       console.error('❌ Login error:', error);
-      throw new ForbiddenException('Invalid credentials. Please check your email and password.');
+      
+      // Enhanced error handling for deployments
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      throw new ForbiddenException('Authentication failed. Please try again.');
     }
   }
 

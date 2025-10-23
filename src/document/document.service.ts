@@ -17,6 +17,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateDocumentDto, UpdateDocumentDto } from './dto';
 import { User } from '@prisma/client';
 import { Response } from 'express';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -153,6 +154,7 @@ export class DocumentService {
     private notificationsService: NotificationsService,
     @Optional() @Inject(forwardRef(() => EnquiryService))
     private enquiryService: EnquiryService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     this.initializeService();
   }
@@ -874,16 +876,17 @@ export class DocumentService {
         type: mockDocument.type
       });
 
-      // Auto-sync to Supabase database (enhanced with retry logic)
+      // Auto-sync to Supabase database using unified sync service
       try {
-        await this.autoSyncDocumentToSupabaseWithRetry(mockDocument);
-        console.log('✅ Document synced to Supabase database successfully');
+        console.log('🚀 [DEPLOYMENT] Auto-syncing document to Supabase database:', mockDocument.id);
+        await this.unifiedSupabaseSync.syncDocument(mockDocument);
+        console.log('✅ [DEPLOYMENT] Document synced to Supabase database successfully');
         
         // Update document with Supabase sync status
         mockDocument.supabaseSynced = true;
         mockDocument.supabaseSyncedAt = new Date().toISOString();
       } catch (error) {
-        console.error('❌ Auto-sync to Supabase failed after retries (continuing with local storage):', error);
+        console.error('❌ [DEPLOYMENT] Auto-sync to Supabase failed (continuing with local storage):', error);
         mockDocument.supabaseSynced = false;
         mockDocument.supabaseError = error.message;
       }

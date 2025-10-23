@@ -17,6 +17,12 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Post('force-fresh-login')
+  forceFreshLogin(@Body() dto: LoginDto) {
+    console.log('🔄 Force fresh login endpoint called for:', dto.email);
+    return this.authService.login(dto);
+  }
+
   @Post('invite')
   @UseGuards(JwtGuard)
   invite(@Body() dto: { email: string }) {

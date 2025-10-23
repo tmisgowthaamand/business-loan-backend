@@ -865,6 +865,91 @@ export class StaffController {
   }
 
   // Test email specifically for Render deployment issues
+  @Post('test/deployment-login')
+  async testDeploymentLogin(@Body() body: { email?: string, password?: string }) {
+    try {
+      const testEmail = body.email || 'gowthaamankrishna1998@gmail.com';
+      const testPassword = body.password || '12345678';
+      
+      console.log('🚀 Testing deployment login for:', testEmail);
+      console.log('🌍 Environment check:', {
+        nodeEnv: process.env.NODE_ENV || 'development',
+        isVercel: process.env.VERCEL === '1',
+        isRender: process.env.RENDER === 'true',
+        hasJwtSecret: !!process.env.JWT_SECRET
+      });
+      
+      // Test staff authentication directly
+      const authResult = await this.staffService.authenticateStaff(testEmail, testPassword);
+      
+      if (!authResult) {
+        return {
+          message: 'Deployment login test failed',
+          success: false,
+          error: 'Invalid credentials or staff not found',
+          testCredentials: {
+            email: testEmail,
+            passwordLength: testPassword.length
+          },
+          availableStaff: await this.getAvailableStaffEmails(),
+          timestamp: new Date().toISOString(),
+          status: 'FAILED'
+        };
+      }
+      
+      return {
+        message: 'Deployment login test successful',
+        success: true,
+        staff: {
+          id: authResult.staff.id,
+          name: authResult.staff.name,
+          email: authResult.staff.email,
+          role: authResult.staff.role,
+          department: authResult.staff.department,
+          hasAccess: authResult.staff.hasAccess,
+          verified: authResult.staff.verified
+        },
+        authToken: {
+          provided: !!authResult.authToken,
+          length: authResult.authToken?.length || 0
+        },
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isVercel: process.env.VERCEL === '1',
+          isRender: process.env.RENDER === 'true',
+          deployment: process.env.VERCEL === '1' ? 'Vercel' : 
+                     process.env.RENDER === 'true' ? 'Render' : 'Local'
+        },
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ Deployment login test failed:', error);
+      return {
+        message: 'Deployment login test error',
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  private async getAvailableStaffEmails() {
+    try {
+      const allStaff = await this.staffService.getAllStaff();
+      return allStaff.map(staff => ({
+        email: staff.email,
+        name: staff.name,
+        role: staff.role,
+        hasAccess: staff.hasAccess,
+        verified: staff.verified
+      }));
+    } catch (error) {
+      return [];
+    }
+  }
+
   @Post('test/render-email-fix')
   async testRenderEmailFix(@Body() body: { email?: string }) {
     try {

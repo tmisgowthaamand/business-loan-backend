@@ -452,56 +452,100 @@ export class EnquiryService {
     return mockEnquiry;
   }
 
-  // New method to sync enquiry to Supabase
+  // Enhanced method to automatically sync enquiry to Supabase for Vercel & Render
   private async syncToSupabase(enquiry: any): Promise<void> {
     try {
-      // Enable direct Supabase sync for real database storage
-      console.log('🔄 Auto-syncing enquiry to Supabase database:', enquiry.name);
+      console.log('🚀 [DEPLOYMENT] Auto-syncing enquiry to Supabase:', enquiry.name);
+      console.log('🌍 Environment:', {
+        nodeEnv: process.env.NODE_ENV,
+        isVercel: process.env.VERCEL === '1',
+        isRender: process.env.RENDER === 'true',
+        hasSupabaseUrl: !!process.env.SUPABASE_URL,
+        hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY
+      });
       
-      // Import Supabase client directly for auto-sync
+      // Use environment variables for deployment security
+      const supabaseUrl = process.env.SUPABASE_URL || 'https://vxtpjsymbcirszksrafg.supabase.co';
+      const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU';
+      
+      // Import Supabase client for deployment-ready sync
       const { createClient } = require('@supabase/supabase-js');
-      const supabaseUrl = 'https://vxtpjsymbcirszksrafg.supabase.co';
-      const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU';
-      
       const supabase = createClient(supabaseUrl, supabaseKey);
       
-      // Check for duplicates in Supabase first
-      const { data: existingByPhone } = await supabase
+      // Enhanced duplicate check for deployment reliability
+      const { data: existingByPhone, error: checkError } = await supabase
         .from('Enquiry')
         .select('id, name, mobile')
         .eq('mobile', enquiry.mobile)
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid errors when no match
+      
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('❌ Error checking duplicates in Supabase:', checkError);
+        throw checkError;
+      }
       
       if (existingByPhone) {
         console.log('⚠️ Phone number already exists in Supabase, skipping sync:', enquiry.mobile);
         return;
       }
       
-      // Use the same structure that worked in manual sync
+      // Enhanced data structure for deployment compatibility
       const supabaseData = {
         id: enquiry.id,
         date: enquiry.createdAt,
         name: enquiry.name,
         businessName: enquiry.businessName || enquiry.businessType || null,
         ownerName: enquiry.name,
-        mobile: enquiry.mobile
+        mobile: enquiry.mobile,
+        email: enquiry.email || null,
+        businessType: enquiry.businessType || 'General Business',
+        loanAmount: enquiry.loanAmount || null,
+        source: enquiry.source || 'WEBSITE',
+        interestStatus: enquiry.interestStatus || 'INTERESTED',
+        staffId: enquiry.staffId || 1,
+        assignedStaff: enquiry.staff?.name || 'Auto-Assigned',
+        createdAt: enquiry.createdAt,
+        updatedAt: enquiry.updatedAt
       };
       
-      // Use insert instead of upsert to prevent duplicates
+      // Deployment-ready insert with enhanced error handling
       const { data, error } = await supabase
         .from('Enquiry')
         .insert(supabaseData)
         .select();
       
       if (error) {
-        console.error('❌ Auto-sync error:', error);
+        console.error('❌ [DEPLOYMENT] Auto-sync error:', error);
+        console.error('❌ Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
         throw error;
       }
       
-      console.log('✅ Successfully auto-synced to Supabase:', enquiry.name);
+      console.log('✅ [DEPLOYMENT] Successfully auto-synced to Supabase:', {
+        name: enquiry.name,
+        id: enquiry.id,
+        mobile: enquiry.mobile,
+        supabaseId: data?.[0]?.id,
+        environment: process.env.VERCEL === '1' ? 'Vercel' : 
+                    process.env.RENDER === 'true' ? 'Render' : 'Local'
+      });
     } catch (error) {
-      console.error('❌ Failed to auto-sync enquiry to Supabase:', error);
-      // Don't throw error - this is background sync
+      console.error('❌ [DEPLOYMENT] Failed to auto-sync enquiry to Supabase:', error);
+      console.error('❌ Sync failure details:', {
+        enquiryId: enquiry.id,
+        enquiryName: enquiry.name,
+        error: error.message,
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          isVercel: process.env.VERCEL === '1',
+          isRender: process.env.RENDER === 'true'
+        }
+      });
+      // Don't throw error - this is background sync, shouldn't break the main flow
     }
   }
 

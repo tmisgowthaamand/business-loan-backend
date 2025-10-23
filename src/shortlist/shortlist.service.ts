@@ -13,6 +13,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EnquiryService } from '../enquiry/enquiry.service';
 import { CreateShortlistDto, UpdateShortlistDto } from './dto';
 import { User } from '@prisma/client';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -30,6 +31,7 @@ export class ShortlistService {
     private notificationsService: NotificationsService,
     @Inject(forwardRef(() => EnquiryService))
     private enquiryService: EnquiryService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     this.loadShortlists();
   }
@@ -117,11 +119,13 @@ export class ShortlistService {
     this.demoShortlists.push(mockShortlist);
     this.saveShortlists();
 
-    // Auto-sync to Supabase database
+    // Auto-sync to Supabase database using unified sync service
     try {
-      await this.autoSyncShortlistToSupabase(mockShortlist);
+      console.log('🚀 [DEPLOYMENT] Auto-syncing shortlist to Supabase:', mockShortlist.name);
+      await this.unifiedSupabaseSync.syncShortlist(mockShortlist);
+      console.log('✅ [DEPLOYMENT] Shortlist synced to Supabase successfully');
     } catch (error) {
-      console.error('❌ Auto-sync to Supabase failed (continuing with local storage):', error);
+      console.error('❌ [DEPLOYMENT] Auto-sync to Supabase failed (continuing with local storage):', error);
     }
 
     // Create notification for shortlisting

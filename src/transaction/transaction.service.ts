@@ -12,6 +12,7 @@ import { IdGeneratorService } from '../common/services/id-generator.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTransactionDto, UpdateTransactionDto } from './dto/index';
 import { User } from '@prisma/client';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -28,6 +29,7 @@ export class TransactionService {
     private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     this.loadTransactions();
   }
@@ -134,9 +136,9 @@ export class TransactionService {
       this.demoTransactions.push(mockTransaction);
       this.saveTransactions();
 
-      // Sync to Supabase in background (non-blocking)
-      this.syncTransactionToSupabase(mockTransaction).catch(error => {
-        console.error('❌ Failed to sync transaction to Supabase:', error);
+      // Auto-sync to Supabase using unified sync service (non-blocking)
+      this.unifiedSupabaseSync.syncTransaction(mockTransaction).catch(error => {
+        console.error('❌ [DEPLOYMENT] Failed to sync transaction to Supabase:', error);
       });
 
       // Create enhanced notification with client details and timestamp

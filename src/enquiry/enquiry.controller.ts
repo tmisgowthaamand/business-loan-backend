@@ -32,7 +32,71 @@ export class EnquiryController {
   create(@Body() createEnquiryDto: CreateEnquiryDto, @GetUser() user?: User) {
     // For public applications (from /apply form), use a default staff ID or create without staff
     const userId = user?.id || 1; // Default to admin or first user for public applications
+    console.log('🚀 [DEPLOYMENT] Creating enquiry with auto-Supabase sync:', createEnquiryDto.name || createEnquiryDto.mobile);
     return this.enquiryService.create(createEnquiryDto, userId);
+  }
+
+  @Post('test/deployment-supabase-sync')
+  async testDeploymentSupabaseSync(@Body() body: { name?: string, mobile?: string, email?: string }) {
+    try {
+      const testData = {
+        name: body.name || 'Test Deployment Client',
+        mobile: body.mobile || '9999999999',
+        email: body.email || 'test@deployment.com',
+        businessName: 'Test Deployment Business',
+        businessType: 'Testing',
+        loanAmount: 100000,
+        source: 'DEPLOYMENT_TEST'
+      };
+      
+      console.log('🚀 [DEPLOYMENT] Testing automatic Supabase sync...');
+      console.log('🌍 Environment check:', {
+        nodeEnv: process.env.NODE_ENV,
+        isVercel: process.env.VERCEL === '1',
+        isRender: process.env.RENDER === 'true',
+        hasSupabaseUrl: !!process.env.SUPABASE_URL,
+        hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY
+      });
+      
+      // Create enquiry which will automatically sync to Supabase
+      const result = await this.enquiryService.create(testData, 1);
+      
+      return {
+        message: 'Deployment Supabase sync test completed',
+        success: true,
+        enquiry: {
+          id: result.id,
+          name: result.name,
+          mobile: result.mobile,
+          businessName: result.businessName,
+          source: result.source
+        },
+        environment: {
+          nodeEnv: process.env.NODE_ENV || 'development',
+          isVercel: process.env.VERCEL === '1',
+          isRender: process.env.RENDER === 'true',
+          deployment: process.env.VERCEL === '1' ? 'Vercel' : 
+                     process.env.RENDER === 'true' ? 'Render' : 'Local',
+          supabaseConfigured: !!process.env.SUPABASE_URL && !!process.env.SUPABASE_ANON_KEY
+        },
+        autoSync: {
+          enabled: true,
+          description: 'Enquiry automatically synced to Supabase in background',
+          checkSupabase: 'Check your Supabase Enquiry table for the new record'
+        },
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS'
+      };
+    } catch (error) {
+      console.error('❌ [DEPLOYMENT] Supabase sync test failed:', error);
+      return {
+        message: 'Deployment Supabase sync test failed',
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'FAILED'
+      };
+    }
   }
 
   @Get()
