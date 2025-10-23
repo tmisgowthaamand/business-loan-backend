@@ -2,19 +2,51 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { StaffRole } from './dto/staff.dto';
+import * as sgMail from '@sendgrid/mail';
+import axios from 'axios';
 
 @Injectable()
 export class GmailService {
   private readonly logger = new Logger(GmailService.name);
   private transporter: nodemailer.Transporter;
+  private sendGridInitialized = false;
 
   constructor(private config: ConfigService) {
+    this.initializeEmailServices();
+  }
+
+  // Method to reinitialize email services
+  public reinitializeTransporter() {
+    this.initializeEmailServices();
+  }
+
+  private initializeEmailServices() {
+    this.initializeSendGrid();
     this.initializeTransporter();
   }
 
-  // Method to reinitialize transporter (useful for credential updates)
-  public reinitializeTransporter() {
-    this.initializeTransporter();
+  private initializeSendGrid() {
+    const sendGridApiKey = this.config.get('SENDGRID_API_KEY');
+    const isRender = process.env.RENDER === 'true';
+    
+    if (sendGridApiKey) {
+      try {
+        sgMail.setApiKey(sendGridApiKey);
+        this.sendGridInitialized = true;
+        this.logger.log('📧 SendGrid initialized successfully');
+        if (isRender) {
+          this.logger.log('🌐 Using SendGrid for Render deployment (SMTP bypass)');
+        }
+      } catch (error) {
+        this.logger.error('❌ SendGrid initialization failed:', error.message);
+        this.sendGridInitialized = false;
+      }
+    } else {
+      this.logger.warn('⚠️ SENDGRID_API_KEY not found - SendGrid disabled');
+      if (isRender) {
+        this.logger.warn('🌐 Render deployment without SendGrid - email delivery may fail');
+      }
+    }
   }
 
   private initializeTransporter() {
@@ -115,16 +147,6 @@ export class GmailService {
       this.logger.log(`🔗 Access token for ${recipientName}: ${accessToken}`);
       return true; // Return success to not break the flow
     }
-
-    // For Render deployment, try webhook notification first if SMTP fails
-    if (isRender) {
-      this.logger.log(`🌐 Render deployment detected - using optimized email strategy for ${recipientEmail}`);
-      this.logger.log(`📧 Sending from: gokrishna98@gmail.com to: ${recipientEmail}`);
-    }
-    
-    // Get credentials from environment or use fallback
-    const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
-    const currentPassword = this.config.get('GMAIL_PASSWORD') || this.config.get('GMAIL_APP_PASSWORD') || 'wwigqdrsiqarwiwz';
     
     // Dynamic backend URL based on environment
     let backendUrl = this.config.get('BACKEND_URL') || 'http://localhost:5002';
@@ -134,8 +156,140 @@ export class GmailService {
     
     const accessLink = `${backendUrl}/api/staff/verify-access/${accessToken}`;
 
+    // Strategy 1: Try SendGrid first (works on Render)
+    if (this.sendGridInitialized && isRender) {
+      this.logger.log(`📧 Render detected - using SendGrid for ${recipientEmail}`);
+      const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
+      if (sendGridSuccess) {
+        return true;
+      }
+      this.logger.warn('📧 SendGrid failed, trying fallback methods...');
+    }
+
+    // Strategy 2: Try webhook notification service
+    if (isRender) {
+      this.logger.log(`🌐 Trying webhook notification for ${recipientEmail}`);
+      const webhookSuccess = await this.sendViaWebhook(recipientEmail, recipientName, accessLink, role);
+      if (webhookSuccess) {
+        return true;
+      }
+      this.logger.warn('🌐 Webhook failed, trying SMTP...');
+    }
+
+    // Strategy 3: Try SMTP (may fail on Render)
     try {
+      return await this.sendViaSMTP(recipientEmail, recipientName, accessLink, role);
+    } catch (error) {
+      this.logger.error(`❌ All email methods failed for ${recipientEmail}`);
       
+      // Strategy 4: Fallback logging system for Render
+      if (isRender) {
+        this.logger.log(`📧 RENDER FALLBACK: Manual verification required`);
+        this.logger.log(`👤 Staff: ${recipientName} (${recipientEmail}) - Role: ${role}`);
+        this.logger.log(`🔗 Verification Link: ${accessLink}`);
+        this.logger.log(`⚠️ Please manually send verification email`);
+        
+        // Try to send notification to admin webhook
+        await this.notifyAdminOfEmailFailure(recipientEmail, recipientName, accessLink, role);
+        
+        return true; // Return success for Render to not break staff creation
+      }
+      
+      return false;
+    }
+  }
+
+  private async sendViaSendGrid(
+    recipientEmail: string,
+    recipientName: string,
+    accessLink: string,
+    role: StaffRole
+  ): Promise<boolean> {
+    if (!this.sendGridInitialized) {
+      return false;
+    }
+
+    try {
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'noreply@businessloan.com';
+      
+      const msg = {
+        to: recipientEmail,
+        from: {
+          email: fromEmail,
+          name: 'Business Loan Management System'
+        },
+        subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
+        html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
+      };
+
+      this.logger.log(`📧 Sending via SendGrid to ${recipientEmail}`);
+      await sgMail.send(msg);
+      this.logger.log(`✅ SendGrid email sent successfully to ${recipientEmail}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`❌ SendGrid failed for ${recipientEmail}:`, error.message);
+      if (error.response?.body?.errors) {
+        this.logger.error('SendGrid errors:', error.response.body.errors);
+      }
+      return false;
+    }
+  }
+
+  private async sendViaWebhook(
+    recipientEmail: string,
+    recipientName: string,
+    accessLink: string,
+    role: StaffRole
+  ): Promise<boolean> {
+    const webhookUrl = this.config.get('EMAIL_WEBHOOK_URL');
+    if (!webhookUrl) {
+      return false;
+    }
+
+    try {
+      this.logger.log(`🌐 Sending via webhook to ${recipientEmail}`);
+      
+      const payload = {
+        to: recipientEmail,
+        name: recipientName,
+        accessLink: accessLink,
+        role: role,
+        subject: `Welcome to Business Loan Management System - ${role} Access`,
+        template: 'staff_verification',
+        timestamp: new Date().toISOString()
+      };
+
+      const response = await axios.post(webhookUrl, payload, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.config.get('EMAIL_WEBHOOK_TOKEN') || ''}`
+        }
+      });
+
+      if (response.status === 200) {
+        this.logger.log(`✅ Webhook email sent successfully to ${recipientEmail}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      this.logger.error(`❌ Webhook failed for ${recipientEmail}:`, error.message);
+      return false;
+    }
+  }
+
+  private async sendViaSMTP(
+    recipientEmail: string,
+    recipientName: string,
+    accessLink: string,
+    role: StaffRole
+  ): Promise<boolean> {
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    const currentEmail = this.config.get('GMAIL_EMAIL') || this.config.get('GMAIL_USER') || 'gokrishna98@gmail.com';
+
+    try {
       const mailOptions = {
         from: {
           name: 'Business Loan Management System',
@@ -144,7 +298,6 @@ export class GmailService {
         to: recipientEmail,
         subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
-        // Production optimizations
         priority: 'normal' as const,
         headers: {
           'X-Mailer': 'Business Loan System',
@@ -152,111 +305,56 @@ export class GmailService {
         }
       };
       
-      this.logger.log(`📧 Sending access link to ${recipientEmail} (${role})`);
-      this.logger.log(`🌐 Backend URL: ${backendUrl}`);
-      this.logger.log(`🚀 Platform: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
+      this.logger.log(`📧 Sending via SMTP to ${recipientEmail} (${role})`);
       
-      // Skip connection verification in production for speed
-      if (!isProduction) {
-        await this.transporter.verify();
-        this.logger.log(`📧 SMTP connection verified successfully`);
-      }
-      
-      // Send email with timeout for production environments
+      // Send email with timeout
       const sendPromise = this.transporter.sendMail(mailOptions);
-      const timeoutMs = isRender ? 10000 : isVercel ? 8000 : 30000; // Shorter timeouts for production
+      const timeoutMs = isRender ? 5000 : 15000; // Very short timeout for Render
       
-      // Enhanced timeout handling with retry for Render
-      let result;
-      let attempts = isRender ? 3 : 1; // More retries for Render
+      const result = await Promise.race([
+        sendPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('SMTP timeout')), timeoutMs)
+        )
+      ]) as any;
       
-      for (let attempt = 1; attempt <= attempts; attempt++) {
-        try {
-          this.logger.log(`📧 Email send attempt ${attempt}/${attempts} for ${recipientEmail}`);
-          
-          result = await Promise.race([
-            sendPromise,
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Connection timeout')), timeoutMs)
-            )
-          ]) as any;
-          
-          this.logger.log(`✅ Email sent successfully on attempt ${attempt} to ${recipientEmail}`);
-          break; // Success, exit retry loop
-        } catch (error) {
-          this.logger.warn(`📧 Email attempt ${attempt}/${attempts} failed for ${recipientEmail}: ${error.message}`);
-          
-          if (attempt === attempts) {
-            // For Render, if all SMTP attempts fail, use fallback logging
-            if (isRender) {
-              this.logger.log(`🌐 Render SMTP blocked - using fallback notification system`);
-              this.logger.log(`📧 FALLBACK: Email verification for ${recipientName} (${recipientEmail})`);
-              this.logger.log(`🔗 Access Link: ${accessLink}`);
-              this.logger.log(`👤 Role: ${role}`);
-              this.logger.log(`⚠️ Manual verification required - SMTP blocked by Render`);
-              
-              // Return success for Render to not break staff creation
-              return true;
-            }
-            throw error; // Last attempt failed, throw error for non-Render
-          }
-          
-          this.logger.warn(`📧 Retrying email send in ${attempt * 1000}ms...`);
-          await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // Progressive delay
-        }
-      }
-      
-      this.logger.log(`✅ Access link sent successfully to ${recipientEmail}. Message ID: ${result.messageId}`);
+      this.logger.log(`✅ SMTP email sent successfully to ${recipientEmail}. Message ID: ${result.messageId}`);
       return true;
     } catch (error) {
-      this.logger.error(`❌ Failed to send access link to ${recipientEmail}:`);
-      this.logger.error(`Error: ${error.message}`);
-      
-      // Enhanced error handling for production with Render-specific fallbacks
-      if (error.message === 'Connection timeout' || error.message === 'Email send timeout') {
-        this.logger.error(`⏱️ Email send timeout (${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment)`);
-        if (isRender) {
-          this.logger.error(`🌐 Render network restrictions blocking SMTP connections`);
-          this.logger.log(`📧 RENDER FALLBACK: Staff verification details logged for manual processing`);
-          this.logger.log(`👤 Staff: ${recipientName} (${recipientEmail}) - Role: ${role}`);
-          this.logger.log(`🔗 Verification Link: ${accessLink}`);
-          return true; // Return success for Render
-        }
-      } else if (error.code === 'EAUTH' || error.responseCode === 535) {
-        this.logger.error(`🔐 Gmail authentication failed`);
-        this.logger.error(`📧 Using: gokrishna98@gmail.com with app password`);
-        if (!isProduction) {
-          this.logger.error(`🔗 Generate new app password at: https://myaccount.google.com/apppasswords`);
-        }
-      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
-        this.logger.error(`🌐 Network connection issue in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
-        if (isRender) {
-          this.logger.log(`🔧 Render SMTP ports blocked - using fallback logging system`);
-          this.logger.log(`📧 MANUAL VERIFICATION REQUIRED:`);
-          this.logger.log(`   Name: ${recipientName}`);
-          this.logger.log(`   Email: ${recipientEmail}`);
-          this.logger.log(`   Role: ${role}`);
-          this.logger.log(`   Access Link: ${accessLink}`);
-          this.logger.log(`⚠️ Please manually send verification email or use alternative method`);
-          return true; // Return success for Render to not break staff creation
-        }
-      } else if (error.message.includes('timeout')) {
-        this.logger.error(`⏰ Network timeout in ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'} environment`);
-        if (isRender) {
-          this.logger.log(`📧 Render timeout - staff creation will continue without email`);
-          return true;
-        }
+      this.logger.error(`❌ SMTP failed for ${recipientEmail}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  private async notifyAdminOfEmailFailure(
+    recipientEmail: string,
+    recipientName: string,
+    accessLink: string,
+    role: StaffRole
+  ): Promise<void> {
+    try {
+      const adminWebhook = this.config.get('ADMIN_NOTIFICATION_WEBHOOK');
+      if (!adminWebhook) {
+        return;
       }
-      
-      // In production, don't fail the entire operation due to email issues
-      if (isProduction || isRender) {
-        this.logger.log(`📧 Email failed in ${isRender ? 'Render' : 'production'}, but continuing operation for ${recipientEmail}`);
-        this.logger.log(`🔗 Manual access token for ${recipientName}: ${accessToken}`);
-        this.logger.log(`📋 Staff creation will complete successfully despite email failure`);
-        return true; // Return success to not break the staff creation flow
-      }
-      
-      return false;
+
+      const payload = {
+        type: 'EMAIL_DELIVERY_FAILED',
+        message: `Email delivery failed for staff member: ${recipientName} (${recipientEmail})`,
+        details: {
+          recipientEmail,
+          recipientName,
+          role,
+          accessLink,
+          timestamp: new Date().toISOString(),
+          platform: 'Render'
+        }
+      };
+
+      await axios.post(adminWebhook, payload, { timeout: 5000 });
+      this.logger.log(`📧 Admin notified of email failure for ${recipientEmail}`);
+    } catch (error) {
+      this.logger.error(`Failed to notify admin of email failure: ${error.message}`);
     }
   }
 
