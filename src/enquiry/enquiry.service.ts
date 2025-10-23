@@ -110,7 +110,7 @@ export class EnquiryService {
         staff: {
           id: 2,
           name: 'Venkat',
-          email: 'govindamanager9998@gmail.com'
+          email: 'gowthaamaneswar1998@gmail.com'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -152,7 +152,7 @@ export class EnquiryService {
         staff: {
           id: 4,
           name: 'Harish',
-          email: 'newclientmgmt@gmail.com'
+          email: 'newacttmis@gmail.com'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -173,7 +173,7 @@ export class EnquiryService {
         staff: {
           id: 5,
           name: 'Nanciya',
-          email: 'Anmunanciya@gmail.com'
+          email: 'tmsnunciya59@gmail.com'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -236,7 +236,112 @@ export class EnquiryService {
         staff: {
           id: 2,
           name: 'Venkat',
-          email: 'govindamanager9998@gmail.com'
+          email: 'gowthaamaneswar1998@gmail.com'
+        },
+        documents: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 10,
+        name: 'Poorani',
+        businessName: 'Poorani Textiles',
+        mobile: '9876543221',
+        email: 'poorani@textiles.com',
+        businessType: 'Textiles',
+        loanAmount: 750000,
+        source: 'ONLINE_APPLICATION',
+        interestStatus: 'INTERESTED',
+        staffId: 4,
+        assignedStaff: 'Harish',
+        staff: {
+          id: 4,
+          name: 'Harish',
+          email: 'newacttmis@gmail.com'
+        },
+        documents: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 11,
+        name: 'Manigandan M',
+        businessName: 'Manigandan Industries',
+        mobile: '9876543222',
+        email: 'manigandan@industries.com',
+        businessType: 'Manufacturing',
+        loanAmount: 1000000,
+        source: 'ONLINE_APPLICATION',
+        interestStatus: 'INTERESTED',
+        staffId: 3,
+        assignedStaff: 'Dinesh',
+        staff: {
+          id: 3,
+          name: 'Dinesh',
+          email: 'dinesh@gmail.com'
+        },
+        documents: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 12,
+        name: 'Praba',
+        businessName: 'Praba Enterprises',
+        mobile: '9876543223',
+        email: 'praba@enterprises.com',
+        businessType: 'Services',
+        loanAmount: 400000,
+        source: 'ONLINE_APPLICATION',
+        interestStatus: 'INTERESTED',
+        staffId: 5,
+        assignedStaff: 'Nunciya',
+        staff: {
+          id: 5,
+          name: 'Nunciya',
+          email: 'tmsnunciya59@gmail.com'
+        },
+        documents: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 13,
+        name: 'Deepak Verma',
+        businessName: 'Verma Construction',
+        mobile: '9876543228',
+        email: 'deepak@verma.com',
+        businessType: 'Construction',
+        loanAmount: 850000,
+        source: 'ONLINE_APPLICATION',
+        interestStatus: 'INTERESTED',
+        staffId: 5,
+        assignedStaff: 'Nunciya',
+        staff: {
+          id: 5,
+          name: 'Nunciya',
+          email: 'tmsnunciya59@gmail.com'
+        },
+        documents: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 14,
+        name: 'Neha Agarwal',
+        businessName: 'Agarwal Enterprises',
+        mobile: '9876543229',
+        email: 'neha@agarwal.com',
+        businessType: 'Trading',
+        loanAmount: 650000,
+        source: 'ONLINE_APPLICATION',
+        interestStatus: 'INTERESTED',
+        staffId: 6,
+        assignedStaff: 'Admin User',
+        staff: {
+          id: 6,
+          name: 'Admin User',
+          email: 'admin@businessloan.com'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -246,7 +351,7 @@ export class EnquiryService {
     
     // Save using persistence service for production compatibility
     await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
-    console.log('📋 Created', this.enquiriesStorage.length, 'default demo enquiries');
+    console.log('📋 Created', this.enquiriesStorage.length, 'COMPLETE demo enquiries for deployment');
   }
 
   private async saveEnquiries() {

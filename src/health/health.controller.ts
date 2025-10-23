@@ -1,8 +1,11 @@
 import { Controller, Get } from '@nestjs/common';
+import { DeploymentInitService } from '../common/services/deployment-init.service';
 
 @Controller('health')
 export class HealthController {
-  constructor() {}
+  constructor(
+    private deploymentInitService: DeploymentInitService
+  ) {}
 
   @Get()
   async getHealth() {
@@ -57,5 +60,11 @@ export class HealthController {
       url: projectInfo.url,
       connectionTest: isConnected
     };
+  }
+
+  @Get('deployment')
+  async getDeploymentHealth() {
+    console.log('🚀 Deployment health check called');
+    return await this.deploymentInitService.getDeploymentHealth();
   }
 }

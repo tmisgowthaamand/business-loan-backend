@@ -32,6 +32,10 @@ export class CreateStaffDto {
   @IsOptional()
   @IsString()
   position?: string;
+
+  @IsOptional()
+  @IsString()
+  clientName?: string;
 }
 
 export class UpdateStaffDto {
@@ -65,6 +69,10 @@ export class UpdateStaffDto {
   position?: string;
 
   @IsOptional()
+  @IsString()
+  clientName?: string;
+
+  @IsOptional()
   @IsBoolean()
   hasAccess?: boolean;
 }
@@ -79,6 +87,8 @@ export interface StaffEntity {
   hasAccess: boolean;
   department?: string;
   position?: string;
+  verified?: boolean;
+  clientName?: string;
   accessToken?: string;
   accessTokenExpiry?: Date;
   lastLogin?: Date;

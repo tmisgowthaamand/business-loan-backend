@@ -36,23 +36,22 @@ export class DocumentService {
   private readonly isRender = process.env.RENDER === 'true';
   private readonly isVercel = process.env.VERCEL === '1';
 
-  // Static enquiry mapping to avoid circular dependency - Updated with 1-2 digit IDs
+  // Static enquiry mapping to avoid circular dependency - UPDATED FOR 14 ENQUIRIES DEPLOYMENT
   private readonly enquiryMapping = {
-    1: { name: 'BALAMURUGAN', mobile: '9876543215' },
-    2: { name: 'Rajesh Kumar', mobile: '9876543210' },
-    3: { name: 'Priya Sharma', mobile: '9876543211' },
-    4: { name: 'Amit Patel', mobile: '9876543212' },
-    5: { name: 'Sunita Gupta', mobile: '9876543213' },
-    6: { name: 'Vikram Singh', mobile: '9876543214' },
-    7: { name: 'Renu', mobile: '9876543210' },
-    8: { name: 'BALAMURUGAN', mobile: '9876543215' },
-    9: { name: 'VIGNESH S', mobile: '9876543220' },
-    10: { name: 'SUJATA GUPTA', mobile: '9876543216' },
-    11: { name: 'AMIT PATEL', mobile: '9876543217' },
-    12: { name: 'PRIYA SHARMA', mobile: '9876543218' },
-    13: { name: 'RAJESH KUMAR', mobile: '9876543219' },
-    14: { name: 'Hari', mobile: '9876543221' },
-    15: { name: 'John Doe', mobile: '9876543222' }
+    1: { name: 'BALAMURUGAN', mobile: '9876543215', businessType: 'Manufacturing' },
+    2: { name: 'Rajesh Kumar', mobile: '9876543210', businessType: 'Electronics' },
+    3: { name: 'Priya Sharma', mobile: '9876543211', businessType: 'Textiles' },
+    4: { name: 'Amit Patel', mobile: '9876543212', businessType: 'Trading' },
+    5: { name: 'Sunita Gupta', mobile: '9876543213', businessType: 'Manufacturing' },
+    6: { name: 'Vikram Singh', mobile: '9876543214', businessType: 'Automotive' },
+    7: { name: 'Renu', mobile: '9876543210', businessType: 'Trading' },
+    8: { name: 'BALAMURUGAN', mobile: '9876543215', businessType: 'Manufacturing' },
+    9: { name: 'VIGNESH S', mobile: '9876543220', businessType: 'Retail' },
+    10: { name: 'Poorani', mobile: '9876543221', businessType: 'Textiles' },
+    11: { name: 'Manigandan M', mobile: '9876543222', businessType: 'Manufacturing' },
+    12: { name: 'Praba', mobile: '9876543223', businessType: 'Services' },
+    13: { name: 'Deepak Verma', mobile: '9876543228', businessType: 'Construction' },
+    14: { name: 'Neha Agarwal', mobile: '9876543229', businessType: 'Trading' }
   };
 
   // Helper method to get enquiry info from enquiry service or static mapping fallback

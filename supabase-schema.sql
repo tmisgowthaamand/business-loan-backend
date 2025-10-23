@@ -194,10 +194,10 @@ ON CONFLICT DO NOTHING;
 -- Insert sample staff data
 INSERT INTO staff (name, email, role, department, phone, status) VALUES
 ('Pankil', 'govindamarketing9998@gmail.com', 'ADMIN', 'Marketing', '9998000001', 'ACTIVE'),
-('Venkat', 'govindamanager9998@gmail.com', 'MANAGER', 'Operations', '9998000002', 'ACTIVE'),
+('Venkat', 'gowthaamaneswar1998@gmail.com', 'MANAGER', 'Operations', '9998000002', 'ACTIVE'),
 ('Dinesh', 'dinesh@gmail.com', 'EMPLOYEE', 'Processing', '9998000003', 'ACTIVE'),
-('Harish', 'newclientmgmt@gmail.com', 'ADMIN', 'Client Management', '9998000004', 'ACTIVE'),
-('Nanciya', 'Anmunanciya@gmail.com', 'ADMIN', 'Administration', '9998000005', 'ACTIVE'),
+('Harish', 'newacttmis@gmail.com', 'ADMIN', 'Client Management', '9998000004', 'ACTIVE'),
+('Nanciya', 'tmsnunciya59@gmail.com', 'ADMIN', 'Administration', '9998000005', 'ACTIVE'),
 ('Admin User', 'admin@gmail.com', 'SUPER_ADMIN', 'System', '9998000006', 'ACTIVE'),
 ('Admin User', 'admin@businessloan.com', 'ADMIN', 'Business', '9998000007', 'ACTIVE')
 ON CONFLICT (email) DO NOTHING;
