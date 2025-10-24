@@ -1173,4 +1173,92 @@ export class StaffController {
     }
   }
 
+  // Get all staff with their assigned enquiries for management table
+  @Get('management/with-enquiries')
+  async getAllStaffWithEnquiries() {
+    try {
+      console.log('📋 Getting all staff with assigned enquiries for management table...');
+      return await this.staffService.getAllStaffWithEnquiries();
+    } catch (error) {
+      console.error('❌ Get staff with enquiries failed:', error);
+      throw new BadRequestException(`Failed to get staff with enquiries: ${error.message}`);
+    }
+  }
+
+  // Get real-time staff dashboard data for automatic updates
+  @Get('dashboard/live-data')
+  async getLiveStaffDashboardData() {
+    try {
+      console.log('📊 Getting live staff dashboard data for automatic updates...');
+      
+      const staffWithEnquiries = await this.staffService.getAllStaffWithEnquiries();
+      
+      // Add summary statistics
+      const totalStaff = staffWithEnquiries.length;
+      const totalAssignedEnquiries = staffWithEnquiries.reduce((sum, staff) => sum + staff.assignedEnquiries, 0);
+      const staffWithAssignments = staffWithEnquiries.filter(staff => staff.assignedEnquiries > 0).length;
+      const availableStaff = staffWithEnquiries.filter(staff => staff.assignedEnquiries === 0).length;
+      
+      return {
+        timestamp: new Date().toISOString(),
+        summary: {
+          totalStaff,
+          totalAssignedEnquiries,
+          staffWithAssignments,
+          availableStaff
+        },
+        staffData: staffWithEnquiries.map(staff => ({
+          id: staff.id,
+          name: staff.name,
+          email: staff.email,
+          role: staff.role,
+          department: staff.department,
+          status: staff.status,
+          assignedEnquiries: staff.assignedEnquiries,
+          clientNamesDisplay: staff.clientNamesDisplay,
+          lastUpdated: staff.updatedAt || staff.createdAt
+        }))
+      };
+    } catch (error) {
+      console.error('❌ Get live staff dashboard data failed:', error);
+      throw new BadRequestException(`Failed to get live dashboard data: ${error.message}`);
+    }
+  }
+
+  // Get staff assignment changes for polling (frontend can call this every few seconds)
+  @Get('dashboard/changes/:timestamp')
+  async getStaffAssignmentChanges(@Param('timestamp') lastUpdate: string) {
+    try {
+      console.log('🔄 Checking for staff assignment changes since:', lastUpdate);
+      
+      const lastUpdateTime = new Date(lastUpdate);
+      const currentData = await this.staffService.getAllStaffWithEnquiries();
+      
+      // Filter staff that have been updated since the last check
+      const changedStaff = currentData.filter(staff => {
+        const staffUpdateTime = new Date(staff.updatedAt || staff.createdAt);
+        return staffUpdateTime > lastUpdateTime;
+      });
+      
+      return {
+        timestamp: new Date().toISOString(),
+        hasChanges: changedStaff.length > 0,
+        changedStaff: changedStaff.map(staff => ({
+          id: staff.id,
+          name: staff.name,
+          assignedEnquiries: staff.assignedEnquiries,
+          clientNamesDisplay: staff.clientNamesDisplay,
+          lastUpdated: staff.updatedAt || staff.createdAt
+        })),
+        summary: {
+          totalChanges: changedStaff.length,
+          lastCheckTime: lastUpdate
+        }
+      };
+    } catch (error) {
+      console.error('❌ Get staff assignment changes failed:', error);
+      throw new BadRequestException(`Failed to get assignment changes: ${error.message}`);
+    }
+  }
+
 }

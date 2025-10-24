@@ -284,4 +284,170 @@ export class UnifiedSupabaseSyncService {
       return false;
     }
   }
+
+  /**
+   * Auto-sync method that determines the correct sync based on data type
+   */
+  async autoSync(data: any, dataType: 'enquiry' | 'document' | 'shortlist' | 'staff' | 'transaction' | 'payment'): Promise<void> {
+    try {
+      this.logger.log(`🔄 [AUTO-SYNC] Starting auto-sync for ${dataType}:`, data.id || data.name);
+      
+      switch (dataType) {
+        case 'enquiry':
+          await this.syncEnquiry(data);
+          break;
+        case 'document':
+          await this.syncDocument(data);
+          break;
+        case 'shortlist':
+          await this.syncShortlist(data);
+          break;
+        case 'staff':
+          await this.syncStaff(data);
+          break;
+        case 'transaction':
+          await this.syncTransaction(data);
+          break;
+        case 'payment':
+          await this.syncPaymentGateway(data);
+          break;
+        default:
+          this.logger.warn(`⚠️ Unknown data type for auto-sync: ${dataType}`);
+      }
+      
+      this.logger.log(`✅ [AUTO-SYNC] Completed auto-sync for ${dataType}:`, data.id || data.name);
+    } catch (error) {
+      this.logger.error(`❌ [AUTO-SYNC] Failed auto-sync for ${dataType}:`, error);
+      // Don't throw error to prevent breaking the main flow
+    }
+  }
+
+  /**
+   * Bulk auto-sync for multiple records
+   */
+  async bulkAutoSync(records: any[], dataType: 'enquiry' | 'document' | 'shortlist' | 'staff' | 'transaction' | 'payment'): Promise<{ success: number; failed: number }> {
+    this.logger.log(`🔄 [BULK-SYNC] Starting bulk auto-sync for ${records.length} ${dataType} records`);
+    
+    let success = 0;
+    let failed = 0;
+
+    for (const record of records) {
+      try {
+        await this.autoSync(record, dataType);
+        success++;
+      } catch (error) {
+        failed++;
+        this.logger.error(`❌ [BULK-SYNC] Failed to sync ${dataType} record:`, error);
+      }
+      
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    this.logger.log(`📊 [BULK-SYNC] Completed bulk auto-sync for ${dataType}: ${success} success, ${failed} failed`);
+    return { success, failed };
+  }
+
+  /**
+   * Get sync status for all modules
+   */
+  async getSyncStatus(): Promise<any> {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRenderProduction = process.env.RENDER === 'true' && isProduction;
+    const isVercelProduction = process.env.VERCEL === '1' && isProduction;
+    
+    return {
+      environment: this.getEnvironment(),
+      isProduction,
+      isRenderProduction,
+      isVercelProduction,
+      syncEnabled: isProduction && (isRenderProduction || isVercelProduction),
+      supabaseConnected: !!this.supabaseClient,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Force sync all data from all modules (for deployment initialization)
+   */
+  async forceSyncAllModules(): Promise<any> {
+    this.logger.log('🚀 [FORCE-SYNC] Starting force sync for all modules...');
+    
+    const results = {
+      enquiries: { success: 0, failed: 0 },
+      documents: { success: 0, failed: 0 },
+      shortlists: { success: 0, failed: 0 },
+      staff: { success: 0, failed: 0 },
+      transactions: { success: 0, failed: 0 },
+      payments: { success: 0, failed: 0 }
+    };
+
+    try {
+      // Load and sync enquiries
+      const fs = require('fs');
+      const path = require('path');
+      const dataDir = path.join(process.cwd(), 'data');
+
+      // Sync enquiries
+      try {
+        const enquiriesFile = path.join(dataDir, 'enquiries.json');
+        if (fs.existsSync(enquiriesFile)) {
+          const enquiries = JSON.parse(fs.readFileSync(enquiriesFile, 'utf8'));
+          results.enquiries = await this.bulkAutoSync(enquiries, 'enquiry');
+        }
+      } catch (error) {
+        this.logger.error('❌ Failed to sync enquiries:', error);
+      }
+
+      // Sync documents
+      try {
+        const documentsFile = path.join(dataDir, 'documents.json');
+        if (fs.existsSync(documentsFile)) {
+          const documents = JSON.parse(fs.readFileSync(documentsFile, 'utf8'));
+          results.documents = await this.bulkAutoSync(documents, 'document');
+        }
+      } catch (error) {
+        this.logger.error('❌ Failed to sync documents:', error);
+      }
+
+      // Sync shortlists
+      try {
+        const shortlistsFile = path.join(dataDir, 'shortlists.json');
+        if (fs.existsSync(shortlistsFile)) {
+          const shortlists = JSON.parse(fs.readFileSync(shortlistsFile, 'utf8'));
+          results.shortlists = await this.bulkAutoSync(shortlists, 'shortlist');
+        }
+      } catch (error) {
+        this.logger.error('❌ Failed to sync shortlists:', error);
+      }
+
+      // Sync staff
+      try {
+        const staffFile = path.join(dataDir, 'staff.json');
+        if (fs.existsSync(staffFile)) {
+          const staff = JSON.parse(fs.readFileSync(staffFile, 'utf8'));
+          results.staff = await this.bulkAutoSync(staff, 'staff');
+        }
+      } catch (error) {
+        this.logger.error('❌ Failed to sync staff:', error);
+      }
+
+      // Sync payments
+      try {
+        const paymentsFile = path.join(dataDir, 'payments.json');
+        if (fs.existsSync(paymentsFile)) {
+          const payments = JSON.parse(fs.readFileSync(paymentsFile, 'utf8'));
+          results.payments = await this.bulkAutoSync(payments, 'payment');
+        }
+      } catch (error) {
+        this.logger.error('❌ Failed to sync payments:', error);
+      }
+
+      this.logger.log('✅ [FORCE-SYNC] Completed force sync for all modules:', results);
+      return results;
+    } catch (error) {
+      this.logger.error('❌ [FORCE-SYNC] Force sync failed:', error);
+      throw error;
+    }
+  }
 }

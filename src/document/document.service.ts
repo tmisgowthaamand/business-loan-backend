@@ -145,18 +145,37 @@ export class DocumentService {
   }
 
   constructor(
-    private prisma: PrismaService, 
     private config: ConfigService,
+    private prisma: PrismaService,
     @Optional() private supabaseService: SupabaseService,
     private persistenceService: PersistenceService,
     private idGeneratorService: IdGeneratorService,
-    @Optional() @Inject(forwardRef(() => NotificationsService))
-    private notificationsService: NotificationsService,
-    @Optional() @Inject(forwardRef(() => EnquiryService))
+    @Inject(forwardRef(() => EnquiryService))
     private enquiryService: EnquiryService,
+    @Inject(forwardRef(() => NotificationsService))
+    private notificationsService: NotificationsService,
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
-    this.initializeService();
+    this.loadDocuments();
+    this.initializeSupabaseStorage();
+  }
+
+  // Initialize Supabase storage for Render deployment
+  private async initializeSupabaseStorage(): Promise<void> {
+    if (this.isRender || this.isProduction) {
+      try {
+        this.logger.log('🚀 [RENDER] Initializing Supabase storage for document uploads...');
+        const bucketReady = await this.ensureSupabaseBucket();
+        
+        if (bucketReady) {
+          this.logger.log('✅ [RENDER] Supabase storage initialized successfully');
+        } else {
+          this.logger.error('❌ [RENDER] Failed to initialize Supabase storage - document uploads may fail');
+        }
+      } catch (error) {
+        this.logger.error('❌ [RENDER] Error initializing Supabase storage:', error);
+      }
+    }
   }
 
   private async initializeService() {
@@ -166,9 +185,6 @@ export class DocumentService {
     
     // Ensure directories exist
     this.ensureDirectories();
-    
-    // Initialize Supabase Storage bucket
-    await this.initializeSupabaseStorage();
     
     // Load existing documents
     await this.loadDocuments();
@@ -189,43 +205,6 @@ export class DocumentService {
     }
   }
 
-  private async initializeSupabaseStorage() {
-    if (!this.supabaseService) {
-      this.logger.warn('⚠️ Supabase service not available, using local storage only');
-      return;
-    }
-
-    try {
-      // Check if documents bucket exists, create if not
-      const { data: buckets, error: listError } = await this.supabaseService.client.storage.listBuckets();
-      
-      if (listError) {
-        this.logger.error('❌ Failed to list Supabase buckets:', listError);
-        return;
-      }
-
-      const documentsBucket = buckets?.find(bucket => bucket.name === this.SUPABASE_BUCKET);
-      
-      if (!documentsBucket) {
-        this.logger.log('📁 Creating documents bucket in Supabase Storage...');
-        const { error: createError } = await this.supabaseService.client.storage.createBucket(this.SUPABASE_BUCKET, {
-          public: false,
-          allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'],
-          fileSizeLimit: 10485760, // 10MB
-        });
-
-        if (createError) {
-          this.logger.error('❌ Failed to create documents bucket:', createError);
-        } else {
-          this.logger.log('✅ Documents bucket created successfully');
-        }
-      } else {
-        this.logger.log('✅ Documents bucket already exists');
-      }
-    } catch (error) {
-      this.logger.error('❌ Error initializing Supabase Storage:', error);
-    }
-  }
 
   private async loadDocuments() {
     try {
@@ -615,6 +594,51 @@ export class DocumentService {
   }
 
   // Supabase Storage Integration Methods
+  
+  // Ensure Supabase bucket exists (for Render deployment)
+  private async ensureSupabaseBucket(): Promise<boolean> {
+    if (!this.supabaseService) {
+      return false;
+    }
+
+    try {
+      // Check if bucket exists
+      const { data: buckets, error: listError } = await this.supabaseService.client.storage.listBuckets();
+      
+      if (listError) {
+        this.logger.error('❌ Error listing Supabase buckets:', listError);
+        return false;
+      }
+
+      const bucketExists = buckets?.some(bucket => bucket.name === this.SUPABASE_BUCKET);
+      
+      if (!bucketExists) {
+        this.logger.log(`📁 Creating Supabase bucket: ${this.SUPABASE_BUCKET}`);
+        
+        // Create bucket if it doesn't exist
+        const { error: createError } = await this.supabaseService.client.storage.createBucket(this.SUPABASE_BUCKET, {
+          public: true,
+          allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'],
+          fileSizeLimit: 10485760 // 10MB
+        });
+
+        if (createError) {
+          this.logger.error('❌ Error creating Supabase bucket:', createError);
+          return false;
+        }
+
+        this.logger.log(`✅ Supabase bucket created: ${this.SUPABASE_BUCKET}`);
+      } else {
+        this.logger.log(`✅ Supabase bucket exists: ${this.SUPABASE_BUCKET}`);
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error('❌ Error ensuring Supabase bucket:', error);
+      return false;
+    }
+  }
+
   private async uploadToSupabaseStorage(
     file: Express.Multer.File,
     enquiryId: number,
@@ -626,14 +650,21 @@ export class DocumentService {
     }
 
     try {
-      // Create organized file path: enquiry-{id}-{name}/{documentType}/{timestamp}-{originalname}
-      const sanitizedName = enquiryName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+      // Ensure bucket exists (important for Render deployment)
+      const bucketReady = await this.ensureSupabaseBucket();
+      if (!bucketReady) {
+        return { success: false, error: 'Failed to ensure Supabase bucket exists' };
+      }
+
+      // Create organized file path with client name: {clientName}/{documentType}/{timestamp}-{originalname}
+      const sanitizedName = enquiryName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
       const timestamp = Date.now();
       const fileExtension = path.extname(file.originalname);
-      const fileName = `${timestamp}-${documentType}${fileExtension}`;
-      const filePath = `enquiry-${enquiryId}-${sanitizedName}/${documentType}/${fileName}`;
+      const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileName = `${sanitizedName}_${documentType.toLowerCase()}_${timestamp}${fileExtension}`;
+      const filePath = `${sanitizedName}/${documentType}/${fileName}`;
 
-      this.logger.log(`📁 Uploading to Supabase Storage: ${filePath}`);
+      this.logger.log(`📁 [RENDER-READY] Uploading to Supabase Storage: ${filePath}`);
 
       // Upload file to Supabase Storage
       const { data, error } = await this.supabaseService.client.storage
@@ -789,14 +820,15 @@ export class DocumentService {
       const enquiryInfo = await this.getEnquiryInfo(parseInt(createDocumentDto.enquiryId.toString()));
       const clientName = enquiryInfo?.name || 'Unknown Client';
       
-      // Upload to Supabase Storage first
+      // Prioritize Supabase Storage for Render deployment
       let supabaseResult = null;
       let localFilePath = null;
+      const isRenderDeployment = this.isRender || this.isProduction;
       
       try {
-        this.logger.log(`📁 Uploading document for ${clientName} (Enquiry: ${createDocumentDto.enquiryId})`);
+        this.logger.log(`📁 [${isRenderDeployment ? 'RENDER' : 'LOCAL'}] Uploading document for ${clientName} (Enquiry: ${createDocumentDto.enquiryId})`);
         
-        // Upload to Supabase Storage using the new method
+        // Always try Supabase first, especially for Render deployment
         supabaseResult = await this.uploadToSupabaseStorage(
           file,
           parseInt(createDocumentDto.enquiryId.toString()),
@@ -805,13 +837,25 @@ export class DocumentService {
         );
         
         if (supabaseResult.success) {
-          this.logger.log(`✅ Document uploaded to Supabase Storage: ${supabaseResult.filePath}`);
+          this.logger.log(`✅ [SUPABASE] Document uploaded successfully: ${supabaseResult.filePath}`);
+          this.logger.log(`🔗 [SUPABASE] Public URL: ${supabaseResult.publicUrl}`);
         } else {
-          this.logger.warn(`⚠️ Supabase Storage upload failed: ${supabaseResult.error}`);
+          this.logger.warn(`⚠️ [SUPABASE] Storage upload failed: ${supabaseResult.error}`);
+          
+          // For Render deployment, Supabase failure is critical
+          if (isRenderDeployment) {
+            this.logger.error('❌ [RENDER] Supabase storage is required for Render deployment');
+            throw new BadRequestException(`Document upload failed: ${supabaseResult.error}`);
+          }
         }
         
       } catch (supabaseError) {
-        this.logger.error('❌ Supabase storage error, falling back to local storage:', supabaseError);
+        this.logger.error('❌ Supabase storage error:', supabaseError);
+        
+        // For Render deployment, don't fall back to local storage
+        if (isRenderDeployment) {
+          throw new BadRequestException(`Document upload failed in Render deployment: ${supabaseError.message}`);
+        }
       }
       
       // Fallback to local storage if needed (for development or if Supabase fails)

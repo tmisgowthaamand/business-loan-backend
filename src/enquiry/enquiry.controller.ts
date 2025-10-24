@@ -731,4 +731,18 @@ export class EnquiryController {
       };
     }
   }
+
+  // Get enquiries assigned to a specific staff member
+  @Get('staff/:staffId')
+  async getEnquiriesByStaff(@Param('staffId') staffId: string) {
+    console.log('📋 Getting enquiries for staff:', staffId);
+    return this.enquiryService.getEnquiriesByStaff(parseInt(staffId));
+  }
+
+  // Get staff workload summary with client names
+  @Get('staff-workload/summary')
+  async getStaffWorkloadSummary() {
+    console.log('📊 Getting staff workload summary...');
+    return this.enquiryService.getStaffWorkloadSummary();
+  }
 }

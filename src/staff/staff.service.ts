@@ -1,16 +1,27 @@
-import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
-import { CreateStaffDto, UpdateStaffDto, StaffEntity, StaffRole, StaffStatus, AccessTokenResult, StaffStats } from './dto/staff.dto';
-import { GmailService } from './gmail.service';
-import { WebhookEmailService } from './webhook-email.service';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Optional,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { PersistenceService } from '../common/services/persistence.service';
 import { IdGeneratorService } from '../common/services/id-generator.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
+import { CreateStaffDto, UpdateStaffDto, StaffEntity, StaffRole, StaffStatus } from './dto/staff.dto';
+import { GmailService } from './gmail.service';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import { WebhookEmailService } from './webhook-email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 
 @Injectable()
 export class StaffService {
@@ -1108,7 +1119,7 @@ export class StaffService {
     }
   }
 
-  async verifyAccessToken(token: string): Promise<AccessTokenResult> {
+  async verifyAccessToken(token: string): Promise<any> {
     try {
       // First check in-memory staff (for backward compatibility)
       let staff = this.staff.find(s => s.accessToken === token);
@@ -1275,7 +1286,7 @@ export class StaffService {
     return { staff: staffWithoutPassword, authToken };
   }
 
-  async getStaffStats(): Promise<StaffStats> {
+  async getStaffStats(): Promise<any> {
     try {
       // Get all staff from Supabase only
       const allStaff = await this.getAllStaff();
@@ -1885,4 +1896,95 @@ export class StaffService {
     }
   }
 
+  // Get all staff with their assigned enquiries for management table
+  async getAllStaffWithEnquiries(): Promise<any[]> {
+    try {
+      this.logger.log('📋 Getting all staff with assigned enquiries...');
+      
+      // Get basic staff information
+      const allStaff = await this.getAllStaff();
+      
+      // Load enquiries data to get assignments
+      const fs = require('fs');
+      const path = require('path');
+      const enquiriesFile = path.join(process.cwd(), 'data', 'enquiries.json');
+      
+      let enquiries = [];
+      try {
+        if (fs.existsSync(enquiriesFile)) {
+          const enquiriesData = fs.readFileSync(enquiriesFile, 'utf8');
+          enquiries = JSON.parse(enquiriesData);
+        }
+      } catch (error) {
+        this.logger.warn('Could not load enquiries data:', error.message);
+      }
+
+      // Enhance staff data with assigned enquiries
+      const staffWithEnquiries = allStaff.map(staff => {
+        const assignedEnquiries = enquiries.filter(enquiry => 
+          enquiry.staffId === staff.id || 
+          enquiry.assignedStaff === staff.name
+        );
+
+        const clientNames = assignedEnquiries.map(enquiry => 
+          enquiry.clientName || enquiry.name || enquiry.businessName
+        ).filter(name => name);
+
+        return {
+          ...staff,
+          assignedEnquiries: assignedEnquiries.length,
+          clientNames: clientNames,
+          clientNamesDisplay: clientNames.length > 0 ? clientNames.join(', ') : 'No clients assigned',
+          enquiryDetails: assignedEnquiries.map(enquiry => ({
+            id: enquiry.id,
+            clientName: enquiry.clientName || enquiry.name,
+            businessName: enquiry.businessName,
+            loanAmount: enquiry.loanAmount,
+            mobile: enquiry.mobile,
+            createdAt: enquiry.createdAt
+          }))
+        };
+      });
+
+      this.logger.log(`✅ Retrieved ${staffWithEnquiries.length} staff members with enquiry assignments`);
+      
+      // Log assignment summary
+      staffWithEnquiries.forEach(staff => {
+        this.logger.log(`   👤 ${staff.name}: ${staff.assignedEnquiries} enquiries - ${staff.clientNamesDisplay}`);
+      });
+
+      return staffWithEnquiries;
+    } catch (error) {
+      this.logger.error('Error getting staff with enquiries:', error);
+      throw error;
+    }
+  }
+
+  // Update staff assignment when enquiry is assigned
+  async updateStaffAssignment(staffId: number, enquiryData: any): Promise<void> {
+    try {
+      this.logger.log(`📋 Updating staff assignment for staff ${staffId} with enquiry ${enquiryData.id}`);
+      
+      const staffIndex = this.staff.findIndex(s => s.id === staffId);
+      if (staffIndex !== -1) {
+        const currentClientName = this.staff[staffIndex].clientName || '';
+        const newClientName = enquiryData.clientName || enquiryData.name || enquiryData.businessName;
+        
+        // Add to existing client names if not already present
+        const clientNames = currentClientName.split(', ').filter(name => name.trim());
+        if (!clientNames.includes(newClientName)) {
+          clientNames.push(newClientName);
+          this.staff[staffIndex].clientName = clientNames.join(', ');
+          this.staff[staffIndex].updatedAt = new Date();
+          
+          // Save updated staff data
+          this.saveStaffToFile();
+          
+          this.logger.log(`✅ Updated staff ${this.staff[staffIndex].name} client list: ${this.staff[staffIndex].clientName}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error updating staff assignment:', error);
+    }
+  }
 }

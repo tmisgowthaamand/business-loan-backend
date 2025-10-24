@@ -303,8 +303,21 @@ export class GmailService {
     }
 
     try {
-      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'gokrishna98@gmail.com';
+      // Use a verified sender email - this should be set in environment variables
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
+                       this.config.get('SENDGRID_VERIFIED_EMAIL') || 
+                       process.env.SENDGRID_FROM_EMAIL || 
+                       process.env.SENDGRID_VERIFIED_EMAIL ||
+                       'noreply@yourdomain.com'; // This should be replaced with actual verified email
       const isRender = process.env.RENDER === 'true';
+      
+      // Validate that we have a proper from email
+      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'gokrishna98@gmail.com') {
+        this.logger.error('❌ SENDGRID: No verified sender email configured!');
+        this.logger.error('⚠️ SENDGRID: Set SENDGRID_FROM_EMAIL to a verified sender identity');
+        this.logger.error('🔗 SENDGRID: Verify sender at https://app.sendgrid.com/settings/sender_auth');
+        return false;
+      }
       
       const msg = {
         to: recipientEmail,
@@ -342,6 +355,23 @@ export class GmailService {
       // Enhanced error logging for debugging
       if (error.response?.body?.errors) {
         this.logger.error('📧 SendGrid API errors:', JSON.stringify(error.response.body.errors, null, 2));
+        
+        // Check for sender identity verification error
+        const errors = error.response.body.errors;
+        const senderIdentityError = errors.find(err => 
+          err.message?.includes('verified Sender Identity') || 
+          err.field === 'from'
+        );
+        
+        if (senderIdentityError) {
+          this.logger.error('🚨 SENDGRID SENDER IDENTITY ERROR DETECTED!');
+          this.logger.error('📧 SOLUTION STEPS:');
+          this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
+          this.logger.error('   2. Add and verify your sender email address');
+          this.logger.error('   3. Set SENDGRID_FROM_EMAIL environment variable to the verified email');
+          this.logger.error('   4. Redeploy your application');
+          this.logger.error(`   Current from email: ${this.config.get('SENDGRID_FROM_EMAIL') || 'NOT SET'}`);
+        }
       }
       if (error.response?.status) {
         this.logger.error(`📧 SendGrid HTTP Status: ${error.response.status}`);
@@ -364,7 +394,18 @@ export class GmailService {
     }
 
     try {
-      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 'gokrishna98@gmail.com';
+      // Use a verified sender email - this should be set in environment variables
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
+                       this.config.get('SENDGRID_VERIFIED_EMAIL') || 
+                       process.env.SENDGRID_FROM_EMAIL || 
+                       process.env.SENDGRID_VERIFIED_EMAIL ||
+                       'noreply@yourdomain.com';
+      
+      // Validate that we have a proper from email
+      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'gokrishna98@gmail.com') {
+        this.logger.error('❌ SENDGRID: No verified sender email configured for revocation email!');
+        return false;
+      }
       
       const msg = {
         to: recipientEmail,
@@ -556,12 +597,15 @@ export class GmailService {
       if (isRender) {
         this.logger.log(`📧 🌐 RENDER DEPLOYMENT - TO FIX AUTOMATIC EMAILS:`);
         this.logger.log(`📧    1. Sign up for SendGrid: https://app.sendgrid.com/`);
-        this.logger.log(`📧    2. Verify your sender email/domain`);
+        this.logger.log(`📧    2. VERIFY SENDER IDENTITY: https://app.sendgrid.com/settings/sender_auth`);
+        this.logger.log(`📧       - Click "Verify a Single Sender"`);
+        this.logger.log(`📧       - Add your email address and verify it`);
         this.logger.log(`📧    3. Create API key: Settings > API Keys > Create API Key`);
         this.logger.log(`📧    4. Add to Render environment: SENDGRID_API_KEY=SG.your-key`);
         this.logger.log(`📧    5. Add SENDGRID_FROM_EMAIL=your-verified-email@domain.com`);
         this.logger.log(`📧    6. Redeploy your Render service`);
         this.logger.log(`📧 ⚠️ RENDER BLOCKS SMTP - SendGrid is the ONLY solution!`);
+        this.logger.log(`📧 📖 Full guide: See SENDGRID_SETUP.md in project root`);
       } else {
         this.logger.log(`📧 🔧 TO FIX AUTOMATIC EMAILS:`);
         this.logger.log(`📧    1. Set GMAIL_EMAIL environment variable to your Gmail address`);

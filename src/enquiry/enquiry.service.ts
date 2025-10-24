@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { PersistenceService } from '../common/services/persistence.service';
 import { IdGeneratorService } from '../common/services/id-generator.service';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import { CreateEnquiryDto, UpdateEnquiryDto } from './dto';
 import { User } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -29,20 +30,43 @@ export class EnquiryService {
     private idGeneratorService: IdGeneratorService,
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
+    @Inject(forwardRef(() => import('../staff/staff.service').then(m => m.StaffService)))
+    @Optional() private staffService?: any,
   ) {
     this.loadEnquiries();
   }
 
   private async loadEnquiries() {
     try {
+      // Enhanced data loading for Render deployment persistence
+      const isRender = process.env.RENDER === 'true';
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      console.log('📋 Loading enquiries...', { isRender, isProduction });
+      
       // Use persistence service for production-ready data loading
       const enquiries = await this.persistenceService.loadData('enquiries', []);
       
       if (enquiries && enquiries.length > 0) {
         this.enquiriesStorage = enquiries;
-        console.log('📋 Loaded', this.enquiriesStorage.length, 'enquiries from persistence service');
+        console.log('✅ Loaded', this.enquiriesStorage.length, 'enquiries from persistence service');
+        
+        // Ensure all enquiries have required fields for display
+        this.enquiriesStorage = this.enquiriesStorage.map(enquiry => ({
+          ...enquiry,
+          clientName: enquiry.clientName || enquiry.name || enquiry.businessName,
+          enquiryName: enquiry.enquiryName || `${enquiry.name || 'Client'} - ${enquiry.businessName || 'Business'}`
+        }));
+        
+        // Save back to ensure consistency
+        if (isRender || isProduction) {
+          await this.saveEnquiries();
+          console.log('💾 Enhanced enquiry data saved for deployment');
+        }
       } else {
         // Create default demo enquiries if no data exists
+        console.log('📋 No existing enquiries found, creating defaults...');
         await this.createDefaultEnquiries();
       }
     } catch (error) {
@@ -65,10 +89,13 @@ export class EnquiryService {
         interestStatus: 'INTERESTED',
         staffId: 4,
         assignedStaff: 'Pankil',
+        clientName: 'BALAMURUGAN',
+        enquiryName: 'BALAMURUGAN - Balamurugan Enterprises',
         staff: {
           id: 4,
           name: 'Pankil',
-          email: 'govindamarketing9998@gmail.com'
+          email: 'govindamarketing9998@gmail.com',
+          clientName: 'Pankil'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -375,11 +402,49 @@ export class EnquiryService {
 
   private async saveEnquiries() {
     try {
-      // Use persistence service for production-ready saving
-      await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
-      console.log('💾 Saved', this.enquiriesStorage.length, 'enquiries via persistence service');
+      const isRender = process.env.RENDER === 'true';
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      // Enhanced saving for Render deployment with retry mechanism
+      let saveAttempts = 0;
+      const maxAttempts = 3;
+      
+      while (saveAttempts < maxAttempts) {
+        try {
+          // Use persistence service for production-ready saving
+          await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
+          console.log('💾 Saved', this.enquiriesStorage.length, 'enquiries via persistence service');
+          
+          // Additional backup save for Render deployment
+          if (isRender || isProduction) {
+            // Create backup timestamp
+            const backupData = {
+              timestamp: new Date().toISOString(),
+              environment: isRender ? 'render' : 'production',
+              count: this.enquiriesStorage.length,
+              enquiries: this.enquiriesStorage
+            };
+            
+            await this.persistenceService.saveData('enquiries_backup', backupData);
+            console.log('🔄 Backup saved for deployment persistence');
+          }
+          
+          break; // Success, exit retry loop
+        } catch (saveError) {
+          saveAttempts++;
+          console.error(`❌ Save attempt ${saveAttempts} failed:`, saveError.message);
+          
+          if (saveAttempts >= maxAttempts) {
+            throw saveError;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
     } catch (error) {
-      console.error('❌ Error saving enquiries:', error);
+      console.error('❌ Error saving enquiries after all attempts:', error);
+      // Don't throw error to prevent breaking the application flow
     }
   }
 
@@ -415,9 +480,12 @@ export class EnquiryService {
     // Generate 1-2 digit ID using ID generator service
     const enquiryId = await this.idGeneratorService.generateEnquiryId();
     
+    const clientName = createEnquiryDto.name || 'Demo Client';
+    const businessName = createEnquiryDto.businessName || 'Business';
+    
     const mockEnquiry = {
       id: enquiryId,
-      name: createEnquiryDto.name || 'Demo Client',
+      name: clientName,
       businessName: createEnquiryDto.businessName,
       mobile: createEnquiryDto.mobile,
       email: createEnquiryDto.email,
@@ -426,6 +494,8 @@ export class EnquiryService {
       source: createEnquiryDto.source || 'ONLINE_APPLICATION',
       interestStatus: createEnquiryDto.interestStatus || 'INTERESTED',
       staffId: userId,
+      clientName: clientName, // Add client name for display
+      enquiryName: `${clientName} - ${businessName}`, // Add enquiry name for staff display
       staff: {
         id: userId,
         name: 'Demo Staff',
@@ -441,9 +511,9 @@ export class EnquiryService {
     await this.saveEnquiries();
     console.log('✅ Enquiry saved to local storage:', mockEnquiry.name);
     
-    // 2. Sync to Supabase in background (non-blocking)
-    this.syncToSupabase(mockEnquiry).catch(error => {
-      console.error('❌ Failed to sync to Supabase:', error);
+    // 2. Auto-sync to Supabase using unified sync service (non-blocking)
+    this.autoSyncEnquiry(mockEnquiry).catch(error => {
+      console.error('❌ Failed to auto-sync enquiry:', error);
     });
     
     // 3. Create notification for new enquiry with detailed information
@@ -469,6 +539,15 @@ export class EnquiryService {
     }
     
     return mockEnquiry;
+  }
+
+  // Auto-sync enquiry using unified sync service
+  private async autoSyncEnquiry(enquiry: any): Promise<void> {
+    try {
+      await this.unifiedSupabaseSync.autoSync(enquiry, 'enquiry');
+    } catch (error) {
+      console.error('❌ Auto-sync enquiry failed:', error);
+    }
   }
 
   // Enhanced method to automatically sync enquiry to Supabase for Vercel & Render
@@ -638,32 +717,36 @@ export class EnquiryService {
       throw new NotFoundException('Enquiry not found');
     }
 
-    // Mock staff data - you can extend this to fetch from actual staff service
-    const mockStaffData = {
-      1: { id: 1, name: 'Perivi', email: 'gowthaamankrishna1998@gmail.com' },
-      2: { id: 2, name: 'Venkat', email: 'gowthaamaneswar1998@gmail.com' },
-      3: { id: 3, name: 'Harish', email: 'newacttmis@gmail.com' },
-      4: { id: 4, name: 'Dinesh', email: 'dinesh@gmail.com' },
-      5: { id: 5, name: 'Nunciya', email: 'tmsnunciya59@gmail.com' },
-      6: { id: 6, name: 'Admin User', email: 'admin@businessloan.com' },
-      7: { id: 7, name: 'Admin User', email: 'admin@gmail.com' }
+    // Updated staff data with correct IDs and names for proper client display
+    const staffData = {
+      1: { id: 1, name: 'Perivi', email: 'gowthaamankrishna1998@gmail.com', clientName: 'Perivi' },
+      2: { id: 2, name: 'Venkat', email: 'gowthaamaneswar1998@gmail.com', clientName: 'Venkat' },
+      3: { id: 3, name: 'Harish', email: 'newacttmis@gmail.com', clientName: 'Harish' },
+      4: { id: 4, name: 'Pankil', email: 'govindamarketing9998@gmail.com', clientName: 'Pankil' },
+      5: { id: 5, name: 'Dinesh', email: 'dinesh@gmail.com', clientName: 'Dinesh' },
+      6: { id: 6, name: 'Nanciya', email: 'tmsnunciya59@gmail.com', clientName: 'Nanciya' },
+      7: { id: 7, name: 'Admin User', email: 'admin@gmail.com', clientName: 'Admin User' }
     };
 
-    const staff = mockStaffData[staffId];
+    const staff = staffData[staffId];
     if (!staff) {
       console.log('❌ Staff not found with ID:', staffId);
       throw new NotFoundException('Staff not found');
     }
 
-    // Update the enquiry in storage
+    // Update the enquiry in storage with enhanced client information
+    const currentEnquiry = this.enquiriesStorage[enquiryIndex];
     this.enquiriesStorage[enquiryIndex] = {
-      ...this.enquiriesStorage[enquiryIndex],
+      ...currentEnquiry,
       staffId: staffId,
       assignedStaff: staff.name,
+      clientName: currentEnquiry.name || currentEnquiry.businessName, // Add client name for display
+      enquiryName: `${currentEnquiry.name || 'Client'} - ${currentEnquiry.businessName || 'Business'}`, // Combined enquiry name
       staff: {
         id: staff.id,
         name: staff.name,
-        email: staff.email
+        email: staff.email,
+        clientName: staff.clientName
       },
       updatedAt: new Date().toISOString()
     };
@@ -688,9 +771,19 @@ export class EnquiryService {
       console.error('❌ Failed to create assignment notification:', error);
     }
 
-    // Sync to Supabase in background
-    this.syncToSupabase(updatedEnquiry).catch(error => {
-      console.error('❌ Failed to sync staff assignment to Supabase:', error);
+    // Update staff service with new assignment for dashboard
+    try {
+      if (this.staffService) {
+        await this.staffService.updateStaffAssignment(staffId, updatedEnquiry);
+        console.log('✅ Staff dashboard updated with new assignment');
+      }
+    } catch (error) {
+      console.error('❌ Failed to update staff dashboard:', error);
+    }
+
+    // Auto-sync updated enquiry to Supabase in background
+    this.autoSyncEnquiry(updatedEnquiry).catch(error => {
+      console.error('❌ Failed to auto-sync staff assignment:', error);
     });
 
     return updatedEnquiry;
@@ -927,6 +1020,64 @@ export class EnquiryService {
       synced,
       errors
     };
+  }
+
+  // Get enquiries assigned to a specific staff member
+  async getEnquiriesByStaff(staffId: number) {
+    console.log('👤 Getting enquiries for staff ID:', staffId);
+    
+    const staffEnquiries = this.enquiriesStorage.filter(enquiry => 
+      enquiry.staffId === staffId
+    );
+    
+    // Enhance enquiries with proper display information
+    const enhancedEnquiries = staffEnquiries.map(enquiry => ({
+      ...enquiry,
+      clientName: enquiry.clientName || enquiry.name || enquiry.businessName,
+      enquiryName: enquiry.enquiryName || `${enquiry.name || 'Client'} - ${enquiry.businessName || 'Business'}`,
+      displayName: enquiry.name || enquiry.businessName || 'Unknown Client'
+    }));
+    
+    console.log(`📋 Found ${enhancedEnquiries.length} enquiries for staff ${staffId}`);
+    return enhancedEnquiries;
+  }
+
+  // Get staff workload summary
+  async getStaffWorkloadSummary() {
+    console.log('📊 Calculating staff workload summary...');
+    
+    const staffWorkload = {};
+    
+    // Count enquiries per staff member
+    this.enquiriesStorage.forEach(enquiry => {
+      const staffId = enquiry.staffId;
+      const staffName = enquiry.assignedStaff || enquiry.staff?.name || 'Unassigned';
+      
+      if (!staffWorkload[staffId]) {
+        staffWorkload[staffId] = {
+          staffId: staffId,
+          staffName: staffName,
+          totalEnquiries: 0,
+          clients: []
+        };
+      }
+      
+      staffWorkload[staffId].totalEnquiries++;
+      staffWorkload[staffId].clients.push({
+        id: enquiry.id,
+        clientName: enquiry.clientName || enquiry.name || enquiry.businessName,
+        enquiryName: enquiry.enquiryName || `${enquiry.name || 'Client'} - ${enquiry.businessName || 'Business'}`,
+        loanAmount: enquiry.loanAmount,
+        businessType: enquiry.businessType,
+        mobile: enquiry.mobile,
+        createdAt: enquiry.createdAt
+      });
+    });
+    
+    const summary = Object.values(staffWorkload);
+    console.log('📊 Staff workload summary:', summary.length, 'staff members');
+    
+    return summary;
   }
 
   // Clear Supabase enquiries and sync current localhost data

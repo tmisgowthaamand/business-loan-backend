@@ -4,6 +4,7 @@ import { IdGeneratorService } from './services/id-generator.service';
 import { UnifiedSupabaseSyncService } from './services/unified-supabase-sync.service';
 import { DataInitializationService } from './services/data-initialization.service';
 import { DataVisibilityController } from './controllers/data-visibility.controller';
+import { AutoSyncController } from './controllers/auto-sync.controller';
 import { EnquiryModule } from '../enquiry/enquiry.module';
 import { DocumentModule } from '../document/document.module';
 import { ShortlistModule } from '../shortlist/shortlist.module';
@@ -14,7 +15,7 @@ import { TransactionModule } from '../transaction/transaction.module';
 
 @Global()
 @Module({
-  controllers: [DataVisibilityController],
+  controllers: [DataVisibilityController, AutoSyncController],
   providers: [PersistenceService, IdGeneratorService, UnifiedSupabaseSyncService, DataInitializationService],
   exports: [PersistenceService, IdGeneratorService, UnifiedSupabaseSyncService, DataInitializationService],
   imports: [
