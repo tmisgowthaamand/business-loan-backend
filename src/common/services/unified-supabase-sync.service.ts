@@ -32,13 +32,15 @@ export class UnifiedSupabaseSyncService {
     skipDuplicateCheck?: boolean;
     upsert?: boolean;
   } = {}): Promise<{ success: boolean; data?: any; error?: any }> {
-    // Only sync in production environments (Render/Vercel)
+    // Only sync in actual production deployments
     const isProduction = process.env.NODE_ENV === 'production';
-    const isRender = process.env.RENDER === 'true';
-    const isVercel = process.env.VERCEL === '1';
+    const isRenderProduction = process.env.RENDER === 'true' && isProduction;
+    const isVercelProduction = process.env.VERCEL === '1' && isProduction;
     
-    if (!isProduction && !isRender && !isVercel) {
-      this.logger.log(`🔧 [DEV] Skipping Supabase sync for ${tableName} in development mode`);
+    // Skip sync in development or local environments
+    if (!isProduction || (!isRenderProduction && !isVercelProduction)) {
+      this.logger.log(`🔧 [DEV] Skipping Supabase sync for ${tableName} - not in production deployment`);
+      this.logger.log(`🔧 Environment: NODE_ENV=${process.env.NODE_ENV}, RENDER=${process.env.RENDER}, VERCEL=${process.env.VERCEL}`);
       return { success: true, data: null };
     }
     
