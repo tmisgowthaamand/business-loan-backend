@@ -33,40 +33,131 @@ export class StaffService {
   }
 
   private initializeDefaultStaff() {
-    this.logger.log('🗄️ Staff service initialized - RESTRICTED ACCESS: Only admin@gmail.com has staff management access');
+    this.logger.log('🗄️ Staff service initialized - Loading all staff members');
     
-    // Initialize with ONLY admin@gmail.com - the sole staff manager
+    // Initialize with all staff members for production use
     this.staff = [
       {
         id: 1,
-        name: 'System Administrator',
-        email: 'admin@gmail.com',
-        password: 'admin123', // Special admin password
+        name: 'Perivi',
+        email: 'gowthaamankrishna1998@gmail.com',
+        password: '12345678',
         role: StaffRole.ADMIN,
-        department: 'Administration',
-        position: 'System Administrator',
+        department: 'Management',
+        position: 'Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'All Staff Management Operations',
+        clientName: 'Business Loan Management',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T09:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
       },
+      {
+        id: 2,
+        name: 'Venkat',
+        email: 'gowthaamaneswar1998@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Employee',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Business Loan Operations',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T10:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 3,
+        name: 'Harish',
+        email: 'newacttmis@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Client Management',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Client Relations',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T11:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 4,
+        name: 'Pankil',
+        email: 'govindamarketing9998@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Marketing',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Marketing Operations',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T12:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 5,
+        name: 'Dinesh',
+        email: 'dinesh@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Employee',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Operations Support',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T13:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 6,
+        name: 'Nanciya',
+        email: 'Anmunanciya@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Administrative Support',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T14:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
     ];
 
-    this.nextId = 2; // Next available ID
+    this.nextId = 7; // Next available ID
     
-    this.logger.log(`✅ Initialized with ${this.staff.length} RESTRICTED staff member - ONLY admin@gmail.com has access:`);
+    this.logger.log(`✅ Initialized with ${this.staff.length} staff members:`);
     this.staff.forEach(staff => {
-      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - STAFF MANAGER`);
+      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.department}`);
     });
     
-    this.logger.log('🔐 RESTRICTED LOGIN CREDENTIALS:');
-    this.logger.log('   - ONLY ADMIN: admin@gmail.com / admin123 (System Administrator)');
-    this.logger.log('🚀 Staff management restricted to admin@gmail.com only!');
+    this.logger.log('🔐 LOGIN CREDENTIALS (Password: 12345678 for all):');
+    this.staff.forEach(staff => {
+      this.logger.log(`   - ${staff.name}: ${staff.email} / 12345678 (${staff.role})`);
+    });
     
     // Save to file
     this.saveStaffToFile();
@@ -76,13 +167,12 @@ export class StaffService {
     return crypto.randomBytes(32).toString('hex');
   }
 
-  // Check if user has staff management permissions (only admin@gmail.com)
+  // Check if user has staff management permissions (all admin users)
   private checkStaffManagementPermission(userEmail?: string): void {
-    const allowedEmail = 'admin@gmail.com';
-    
-    if (!userEmail || userEmail !== allowedEmail) {
-      this.logger.warn(`❌ Unauthorized staff management attempt by: ${userEmail || 'unknown'}`);
-      throw new Error(`Access denied. Only ${allowedEmail} has staff management permissions.`);
+    // Allow all admin users to manage staff
+    if (!userEmail) {
+      this.logger.warn(`❌ Unauthorized staff management attempt by: unknown user`);
+      throw new Error(`Access denied. Please login to access staff management.`);
     }
     
     this.logger.log(`✅ Staff management access granted to: ${userEmail}`);
