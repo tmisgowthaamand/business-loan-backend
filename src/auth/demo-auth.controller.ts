@@ -11,9 +11,15 @@ export class DemoAuthController {
       console.log('🔐 Login attempt for:', loginDto.email);
       console.log('🔐 Password provided:', loginDto.password ? '[PROVIDED]' : '[MISSING]');
       
-      // Only admin@gmail.com has system access
+      // All staff members have system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
+        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 1 },
+        { email: 'gowthaamaneswar1998@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Venkat', id: 2 },
+        { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
+        { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
+        { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);
@@ -70,9 +76,15 @@ export class DemoAuthController {
     try {
       console.log('🔍 Debug login attempt for:', loginDto.email);
       
-      // Only admin@gmail.com has system access
+      // All staff members have system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
+        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 1 },
+        { email: 'gowthaamaneswar1998@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Venkat', id: 2 },
+        { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
+        { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
+        { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);
@@ -124,9 +136,15 @@ export class DemoAuthController {
     try {
       console.log('🔍 Checking user details for:', email);
       
-      // Only admin@gmail.com has system access
+      // All staff members have system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
+        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 1 },
+        { email: 'gowthaamaneswar1998@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Venkat', id: 2 },
+        { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
+        { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
+        { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === email);
@@ -183,9 +201,15 @@ export class DemoAuthController {
     try {
       console.log('🔄 Force fresh login for:', loginDto.email);
       
-      // Only admin@gmail.com has system access
+      // All staff members have system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
+        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 1 },
+        { email: 'gowthaamaneswar1998@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Venkat', id: 2 },
+        { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
+        { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
+        { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);
