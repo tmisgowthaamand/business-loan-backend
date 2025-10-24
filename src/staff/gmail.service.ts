@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { StaffRole } from './dto/staff.dto';
-import * as sgMail from '@sendgrid/mail';
+const sgMail = require('@sendgrid/mail');
 import axios from 'axios';
 
 @Injectable()
@@ -36,15 +36,38 @@ export class GmailService {
       
       if (sendGridApiKey && sendGridApiKey.startsWith('SG.')) {
         try {
-          sgMail.setApiKey(sendGridApiKey);
+          // Try multiple initialization approaches
+          let sendGridModule = sgMail;
+          
+          // Check if sgMail is properly imported
+          if (!sendGridModule || typeof sendGridModule.setApiKey !== 'function') {
+            this.logger.warn('⚠️ RENDER: Primary SendGrid import failed, trying alternative...');
+            
+            // Try alternative import
+            try {
+              sendGridModule = require('@sendgrid/mail');
+            } catch (altError) {
+              this.logger.error('❌ RENDER: Alternative SendGrid import failed:', altError.message);
+            }
+          }
+          
+          // Final check
+          if (!sendGridModule || typeof sendGridModule.setApiKey !== 'function') {
+            throw new Error(`SendGrid module not available. Type: ${typeof sendGridModule}, setApiKey: ${typeof sendGridModule?.setApiKey}`);
+          }
+          
+          sendGridModule.setApiKey(sendGridApiKey);
           this.sendGridInitialized = true;
           this.logger.log('✅ RENDER: SendGrid initialized successfully');
           this.logger.log('🌐 RENDER: Using SendGrid as PRIMARY email service');
           this.logger.log(`🔑 RENDER: API Key: ${sendGridApiKey.substring(0, 8)}...`);
         } catch (error) {
           this.logger.error('❌ RENDER: SendGrid initialization FAILED:', error.message);
+          this.logger.error('❌ RENDER: SendGrid object type:', typeof sgMail);
+          this.logger.error('❌ RENDER: setApiKey method type:', typeof sgMail?.setApiKey);
           this.sendGridInitialized = false;
-          this.logger.error('⚠️ RENDER: NO EMAIL DELIVERY POSSIBLE - Set SENDGRID_API_KEY!');
+          this.logger.error('⚠️ RENDER: NO EMAIL DELIVERY POSSIBLE - SendGrid setup failed!');
+          this.logger.error('🔧 RENDER: Try installing @sendgrid/mail: npm install @sendgrid/mail');
         }
       } else {
         this.logger.error('❌ RENDER: SENDGRID_API_KEY missing or invalid!');
