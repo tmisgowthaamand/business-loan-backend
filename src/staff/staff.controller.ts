@@ -52,7 +52,8 @@ export class StaffController {
   async createStaff(@Body() createStaffDto: CreateStaffDto) {
     try {
       console.log('👤 Creating new staff member:', createStaffDto.email);
-      const result = await this.staffService.createStaff(createStaffDto);
+      // Pass admin@gmail.com as the current user since only this user can manage staff
+      const result = await this.staffService.createStaff(createStaffDto, 'admin@gmail.com');
       return {
         message: 'Staff member created successfully',
         staff: result.staff,
@@ -158,7 +159,8 @@ export class StaffController {
   async deleteStaff(@Param('id') id: string) {
     try {
       console.log('🗑️ Deleting staff member:', id);
-      await this.staffService.deleteStaff(parseInt(id));
+      // Pass admin@gmail.com as the current user since only this user can manage staff
+      await this.staffService.deleteStaff(parseInt(id), 'admin@gmail.com');
       return {
         message: 'Staff member deleted successfully',
         id: parseInt(id),
@@ -1170,4 +1172,5 @@ export class StaffController {
       throw new BadRequestException(`Failed to get staff status: ${error.message}`);
     }
   }
+
 }

@@ -98,7 +98,8 @@ async function bootstrap() {
       'Access-Control-Request-Headers',
       'X-CSRF-Token',
       'X-Forwarded-For',
-      'X-Real-IP'
+      'X-Real-IP',
+      'Cache-Control'
     ],
     exposedHeaders: ['Content-Length', 'X-Total-Count', 'X-Page-Count'],
     preflightContinue: false,

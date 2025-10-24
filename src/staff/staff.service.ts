@@ -33,154 +33,40 @@ export class StaffService {
   }
 
   private initializeDefaultStaff() {
-    this.logger.log('🗄️ Staff service initialized - initializing with DEPLOYMENT-READY staff members for Vercel & Render');
+    this.logger.log('🗄️ Staff service initialized - RESTRICTED ACCESS: Only admin@gmail.com has staff management access');
     
-    // Initialize with deployment-ready staff members with hashed passwords for production
+    // Initialize with ONLY admin@gmail.com - the sole staff manager
     this.staff = [
       {
         id: 1,
-        name: 'Perivi',
-        email: 'gowthaamankrishna1998@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.ADMIN,
-        department: 'Management',
-        position: 'Administrator',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Rajesh Kumar, Priya Sharma, Amit Patel',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-01T09:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 2,
-        name: 'Venkat',
-        email: 'gowthaamaneswar1998@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.EMPLOYEE,
-        department: 'Operations',
-        position: 'Employee',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Sunita Gupta, Vikram Singh',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-02T10:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 3,
-        name: 'Harish',
-        email: 'newacttmis@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.ADMIN,
-        department: 'Client Management',
-        position: 'Manager',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Anita Desai, Ravi Mehta, Sanjay Joshi',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-03T11:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 4,
-        name: 'Dinesh',
-        email: 'dinesh@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.EMPLOYEE,
-        department: 'Processing',
-        position: 'Employee',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Available for Assignment - Ready for New Clients',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-04T12:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 5,
-        name: 'Nunciya',
-        email: 'tmsnunciya59@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.ADMIN,
-        department: 'Administration',
-        position: 'Administrator',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Deepak Verma',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-05T13:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 6,
-        name: 'Admin User',
-        email: 'admin@businessloan.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
-        role: StaffRole.ADMIN,
-        department: 'Administration',
-        position: 'Business Administrator',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'Neha Agarwal, Rohit Sharma',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-06T14:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      },
-      {
-        id: 7,
-        name: 'Admin User',
+        name: 'System Administrator',
         email: 'admin@gmail.com',
-        password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // bcrypt hash of '12345678'
+        password: 'admin123', // Special admin password
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'System Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Manish Gupta',
+        clientName: 'All Staff Management Operations',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-07T15:00:00.000Z'),
+        createdAt: new Date('2024-10-01T09:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
       },
     ];
 
-    this.nextId = 15; // Next available ID
+    this.nextId = 2; // Next available ID
     
-    this.logger.log(`✅ Initialized with ${this.staff.length} DEPLOYMENT-READY staff members for Vercel & Render:`);
+    this.logger.log(`✅ Initialized with ${this.staff.length} RESTRICTED staff member - ONLY admin@gmail.com has access:`);
     this.staff.forEach(staff => {
-      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ACTIVE & VERIFIED`);
+      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - STAFF MANAGER`);
     });
     
-    this.logger.log('🔐 VALID LOGIN CREDENTIALS FOR DEPLOYMENT:');
-    this.logger.log('   - Admin: gowthaamankrishna1998@gmail.com / 12345678 (Perivi)');
-    this.logger.log('   - Employee: gowthaamaneswar1998@gmail.com / 12345678 (Venkat)');
-    this.logger.log('   - Admin: newacttmis@gmail.com / 12345678 (Harish)');
-    this.logger.log('   - Employee: dinesh@gmail.com / 12345678 (Dinesh)');
-    this.logger.log('   - Admin: tmsnunciya59@gmail.com / 12345678 (Nunciya)');
-    this.logger.log('   - Admin: admin@businessloan.com / 12345678 (Admin User)');
-    this.logger.log('   - Admin: admin@gmail.com / 12345678 (Admin User)');
-    this.logger.log('🚀 All staff members ready for production deployment!');
+    this.logger.log('🔐 RESTRICTED LOGIN CREDENTIALS:');
+    this.logger.log('   - ONLY ADMIN: admin@gmail.com / admin123 (System Administrator)');
+    this.logger.log('🚀 Staff management restricted to admin@gmail.com only!');
     
     // Save to file
     this.saveStaffToFile();
@@ -188,6 +74,18 @@ export class StaffService {
 
   private generateAccessToken(): string {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  // Check if user has staff management permissions (only admin@gmail.com)
+  private checkStaffManagementPermission(userEmail?: string): void {
+    const allowedEmail = 'admin@gmail.com';
+    
+    if (!userEmail || userEmail !== allowedEmail) {
+      this.logger.warn(`❌ Unauthorized staff management attempt by: ${userEmail || 'unknown'}`);
+      throw new Error(`Access denied. Only ${allowedEmail} has staff management permissions.`);
+    }
+    
+    this.logger.log(`✅ Staff management access granted to: ${userEmail}`);
   }
 
   private ensureDataDirectory(): void {
@@ -380,12 +278,15 @@ export class StaffService {
   }
 
 
-  async createStaff(createStaffDto: CreateStaffDto): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
+  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
     try {
+      // Check staff management permissions - only admin@gmail.com can create staff
+      this.checkStaffManagementPermission(currentUserEmail);
+      
       this.logger.log(`👤 Creating new staff member: ${createStaffDto.email} (${createStaffDto.role})`);
       
-      // Automatic cleanup: Maintain exactly 7 default staff members before creating new one
-      await this.maintainDefaultStaffCount();
+      // Remove automatic cleanup since we only allow admin@gmail.com to manage staff
+      // await this.maintainDefaultStaffCount();
       
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -567,6 +468,15 @@ export class StaffService {
         this.logger.log(`🔔 Notification sent for new staff member: ${createStaffDto.name}`);
       } catch (error) {
         this.logger.error('Failed to send notification for new staff member:', error);
+      }
+
+      // Auto-sync to Supabase staff table (non-blocking for localhost and Render)
+      if (!isSupabaseUser) {
+        // Only sync if not already in Supabase (i.e., created in memory)
+        this.syncStaffToSupabase(staffEntity as StaffEntity).catch(error => {
+          this.logger.error(`❌ Failed to auto-sync staff to Supabase: ${createStaffDto.email}`, error);
+        });
+        this.logger.log(`🔄 Auto-sync to Supabase staff table queued for: ${createStaffDto.email}`);
       }
 
       this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
@@ -816,21 +726,15 @@ export class StaffService {
     }
   }
 
-  async deleteStaff(id: number): Promise<void> {
+  async deleteStaff(id: number, currentUserEmail?: string): Promise<void> {
     try {
-      // Core demo users that cannot be deleted
-      const coreDemoUsers = [
-        { id: 1, email: 'gowthaamankrishna1998@gmail.com' },
-        { id: 6, email: 'admin@businessloan.com' },
-        { id: 7, email: 'admin@gmail.com' }
-      ];
-
-      // Check if this is a core demo user
-      const isCoreDemo = coreDemoUsers.some(user => user.id === id);
-      if (isCoreDemo) {
-        const coreUser = coreDemoUsers.find(user => user.id === id);
-        this.logger.warn(`❌ Cannot delete core demo user: ${coreUser?.email}`);
-        throw new Error(`Cannot delete system user. This account is protected and cannot be removed.`);
+      // Check staff management permissions - only admin@gmail.com can delete staff
+      this.checkStaffManagementPermission(currentUserEmail);
+      
+      // Protect the admin@gmail.com account from deletion
+      if (id === 1) {
+        this.logger.warn(`❌ Cannot delete system administrator: admin@gmail.com`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
       }
 
       // First try to delete from Supabase
@@ -887,11 +791,10 @@ export class StaffService {
 
       const staff = this.staff[staffIndex];
       
-      // Double-check if it's a core demo user by email
-      const isCoreByEmail = coreDemoUsers.some(user => user.email === staff.email);
-      if (isCoreByEmail) {
-        this.logger.warn(`❌ Cannot delete core demo user: ${staff.email}`);
-        throw new Error(`Cannot delete system user. This account is protected and cannot be removed.`);
+      // Double-check if it's the admin@gmail.com account
+      if (staff.email === 'admin@gmail.com') {
+        this.logger.warn(`❌ Cannot delete system administrator: ${staff.email}`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
       }
 
       this.staff.splice(staffIndex, 1);
@@ -1535,16 +1438,16 @@ export class StaffService {
     }
 
     try {
-      // Try to delete from Supabase Staff table
+      // Try to delete from Supabase staff table (lowercase as requested)
       const { error: staffError } = await this.supabaseService.client
-        .from('Staff')
+        .from('staff')
         .delete()
         .eq('email', staff.email);
 
       if (staffError) {
-        console.log('⚠️ Failed to delete from Staff table:', staffError.message);
+        console.log('⚠️ Failed to delete from staff table:', staffError.message);
       } else {
-        console.log(`✅ Staff deletion synced to Supabase Staff table: ${staff.email}`);
+        console.log(`✅ Staff deletion synced to Supabase staff table: ${staff.email}`);
       }
 
       // Also try to delete from User table if it exists there
@@ -1592,9 +1495,9 @@ export class StaffService {
         updated_at: staff.updatedAt.toISOString()
       };
 
-      // Upsert to Supabase Staff table
+      // Upsert to Supabase staff table (lowercase as requested)
       const { data, error } = await this.supabaseService.client
-        .from('Staff')
+        .from('staff')
         .upsert(supabaseStaff, { onConflict: 'id' });
 
       if (error) {

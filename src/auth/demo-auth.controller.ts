@@ -11,10 +11,9 @@ export class DemoAuthController {
       console.log('🔐 Login attempt for:', loginDto.email);
       console.log('🔐 Password provided:', loginDto.password ? '[PROVIDED]' : '[MISSING]');
       
-      // Core demo users - these cannot be deleted
+      // Only admin@gmail.com has system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 1 },
-        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 3 }
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);
@@ -71,10 +70,9 @@ export class DemoAuthController {
     try {
       console.log('🔍 Debug login attempt for:', loginDto.email);
       
-      // Core demo users - these cannot be deleted
+      // Only admin@gmail.com has system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 1 },
-        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 3 }
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);
@@ -126,10 +124,9 @@ export class DemoAuthController {
     try {
       console.log('🔍 Checking user details for:', email);
       
-      // Core demo users - these cannot be deleted
+      // Only admin@gmail.com has system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 1 },
-        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 3 }
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === email);
@@ -186,10 +183,9 @@ export class DemoAuthController {
     try {
       console.log('🔄 Force fresh login for:', loginDto.email);
       
-      // Core demo users - these cannot be deleted
+      // Only admin@gmail.com has system access
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 1 },
-        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 3 }
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
       ];
 
       const demoUser = demoUsers.find(u => u.email === loginDto.email && u.password === loginDto.password);

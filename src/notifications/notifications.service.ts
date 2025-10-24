@@ -376,7 +376,11 @@ export class NotificationsService {
     }
 
     // Sort by creation date (newest first)
-    userNotifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    userNotifications.sort((a, b) => {
+      const dateA = new Date(a.createdAt);
+      const dateB = new Date(b.createdAt);
+      return dateB.getTime() - dateA.getTime();
+    });
 
     // Apply pagination
     const limit = query.limit ? parseInt(query.limit) : 50;

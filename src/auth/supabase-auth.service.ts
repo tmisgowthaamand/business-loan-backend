@@ -37,10 +37,9 @@ export class SupabaseAuthService {
     try {
       this.logger.log(`🔐 SupabaseAuthService: Login attempt for ${email}`);
       
-      // Core demo users - these cannot be deleted
+      // Only admin@gmail.com has access to the system
       const demoUsers = [
-        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 1 },
-        { email: 'gowthaamankrishna1998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Perivi', id: 3 }
+        { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'System Administrator', id: 1 }
       ];
 
       this.logger.log(`🔍 Checking demo users for ${email}`);
