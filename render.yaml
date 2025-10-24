@@ -6,7 +6,7 @@ services:
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
-    healthCheckPath: /api/health/ping
+    healthCheckPath: /api/staff/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
@@ -15,7 +15,12 @@ services:
         value: true
       - key: PORT
         value: 5002
-      # Gmail SMTP Configuration
+      # SendGrid Configuration (Primary Email Service)
+      - key: SENDGRID_API_KEY
+        value: YOUR_SENDGRID_API_KEY_HERE
+      - key: SENDGRID_FROM_EMAIL
+        value: gokrishna98@gmail.com
+      # Gmail SMTP Configuration (Fallback)
       - key: GMAIL_EMAIL
         value: gokrishna98@gmail.com
       - key: GMAIL_APP_PASSWORD
