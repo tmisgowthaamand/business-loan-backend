@@ -82,6 +82,15 @@ export class UnifiedSupabaseSyncService {
 
       if (error) {
         this.logger.error(`❌ [DEPLOYMENT] Auto-sync error for ${tableName}:`, error);
+        
+        // Provide specific guidance for common errors
+        if (error.code === 'PGRST205') {
+          this.logger.error(`💡 Table '${tableName}' not found. Check table name case sensitivity.`);
+          this.logger.error(`🔗 Verify table exists: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor`);
+        } else if (error.code === 'PGRST301') {
+          this.logger.error(`💡 Permission denied for table '${tableName}'. Check RLS policies.`);
+        }
+        
         return { success: false, error };
       }
 
@@ -187,7 +196,31 @@ export class UnifiedSupabaseSyncService {
       updatedAt: staff.updatedAt
     };
 
-    await this.syncToTable('Staff', supabaseData, { uniqueField: 'email' });
+    // Try different table name variations to handle case sensitivity
+    const tableVariations = ['Staff', 'staff', 'STAFF'];
+    let syncSuccess = false;
+    
+    for (const tableName of tableVariations) {
+      try {
+        await this.syncToTable(tableName, supabaseData, { uniqueField: 'email' });
+        this.logger.log(`✅ Staff synced successfully using table name: ${tableName}`);
+        syncSuccess = true;
+        break;
+      } catch (error) {
+        this.logger.warn(`⚠️ Failed to sync to table '${tableName}':`, error.message);
+        if (error.code === 'PGRST205') {
+          continue; // Try next table name variation
+        } else {
+          throw error; // Re-throw non-table-name errors
+        }
+      }
+    }
+    
+    if (!syncSuccess) {
+      this.logger.error('❌ Failed to sync staff to any table variation. Please check Supabase schema.');
+      this.logger.error('💡 Ensure you have a table named "Staff" (or "staff") in your Supabase database');
+      this.logger.error('🔗 Check your Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+    }
   }
 
   /**

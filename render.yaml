@@ -16,8 +16,11 @@ services:
       - key: PORT
         value: 5002
       # SendGrid Configuration (Primary Email Service)
+      # IMPORTANT: Replace with your actual SendGrid API key from https://app.sendgrid.com/settings/api_keys
       - key: SENDGRID_API_KEY
         value: YOUR_SENDGRID_API_KEY_HERE
+      # IMPORTANT: This email MUST be verified in SendGrid at https://app.sendgrid.com/settings/sender_auth
+      # Using gokrishna98@gmail.com - MUST be verified in SendGrid dashboard
       - key: SENDGRID_FROM_EMAIL
         value: gokrishna98@gmail.com
       # Gmail SMTP Configuration (Fallback)

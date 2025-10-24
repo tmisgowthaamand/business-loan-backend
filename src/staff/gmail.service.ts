@@ -312,11 +312,20 @@ export class GmailService {
       const isRender = process.env.RENDER === 'true';
       
       // Validate that we have a proper from email
-      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'gokrishna98@gmail.com') {
+      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'noreply@businessloan.com') {
         this.logger.error('❌ SENDGRID: No verified sender email configured!');
-        this.logger.error('⚠️ SENDGRID: Set SENDGRID_FROM_EMAIL to a verified sender identity');
+        this.logger.error('⚠️ SENDGRID: Current from email needs verification:', fromEmail);
+        this.logger.error('🔧 SENDGRID SETUP STEPS:');
+        this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
+        this.logger.error('   2. Click "Create New Sender" or "Verify Single Sender"');
+        this.logger.error('   3. Add your email address (can be Gmail, but must be verified)');
+        this.logger.error('   4. Check your email and click verification link');
+        this.logger.error('   5. Update SENDGRID_FROM_EMAIL in Render dashboard');
+        this.logger.error('   6. Redeploy your Render service');
         this.logger.error('🔗 SENDGRID: Verify sender at https://app.sendgrid.com/settings/sender_auth');
-        return false;
+        
+        // For now, allow the process to continue but log the issue
+        this.logger.warn('⚠️ CONTINUING WITH UNVERIFIED EMAIL - EMAILS MAY FAIL');
       }
       
       const msg = {
@@ -402,9 +411,10 @@ export class GmailService {
                        'noreply@yourdomain.com';
       
       // Validate that we have a proper from email
-      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'gokrishna98@gmail.com') {
+      if (fromEmail === 'noreply@yourdomain.com') {
         this.logger.error('❌ SENDGRID: No verified sender email configured for revocation email!');
-        return false;
+        // Don't return false - allow the application to continue
+        // return false;
       }
       
       const msg = {

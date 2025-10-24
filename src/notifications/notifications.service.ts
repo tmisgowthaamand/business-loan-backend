@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -63,7 +63,10 @@ export class NotificationsService {
     { id: 3, role: 'EMPLOYEE' },
   ];
 
-  constructor() {
+  constructor(
+    @Inject(forwardRef(() => import('../staff/gmail.service').then(m => m.GmailService)))
+    @Optional() private gmailService?: any,
+  ) {
     this.logger.log('🔔 NotificationsService initialized for deployment');
     this.logger.log(`🌐 Environment: ${this.isProduction ? 'Production' : 'Development'}`);
     this.logger.log(`🚀 Platform: ${this.isRender ? 'Render' : this.isVercel ? 'Vercel' : 'Local'}`);
@@ -75,6 +78,13 @@ export class NotificationsService {
     this.loadNotifications();
     
     this.logger.log(`🔔 Loaded ${this.notifications.length} notifications for deployment`);
+    
+    // Initialize email notifications
+    if (this.gmailService) {
+      this.logger.log('📧 Email notifications enabled via Gmail service');
+    } else {
+      this.logger.warn('⚠️ Gmail service not available - email notifications disabled');
+    }
     
     // Log deployment readiness
     this.logger.log('🔔 Notification system deployment status:');
@@ -518,12 +528,113 @@ export class NotificationsService {
     // Save to file for persistence in production
     this.saveNotifications();
     
+    // Send email notifications to staff
+    await this.sendEmailNotifications(data, adminUsers);
+    
     console.log('🔔 Created', notifications.length, 'notifications. Total notifications now:', this.notifications.length);
     return {
       message: 'System notification created successfully',
       notifications,
       count: notifications.length,
     };
+  }
+
+  // Send email notifications to staff members
+  private async sendEmailNotifications(data: SystemNotificationData, adminUsers: User[]) {
+    if (!this.gmailService) {
+      this.logger.warn('📧 Gmail service not available - skipping email notifications');
+      return;
+    }
+
+    try {
+      this.logger.log(`📧 Sending email notifications for: ${data.type}`);
+      
+      // Get staff emails (in a real app, you'd fetch from staff service)
+      const staffEmails = [
+        'gowthaamankrishna1998@gmail.com', // Perivi
+        'gowthaamaneswar1998@gmail.com',   // Venkat  
+        'admin@gmail.com',                 // Admin
+        'tmsnunciya59@gmail.com',          // Nunciya
+        'govindamarketing9998@gmail.com',  // Pankil
+        'newacttmis@gmail.com'             // Harish
+      ];
+
+      // Send emails to all staff members
+      for (const email of staffEmails) {
+        try {
+          await this.sendNotificationEmail(email, data);
+          this.logger.log(`📧 Email sent to: ${email}`);
+        } catch (emailError) {
+          this.logger.error(`❌ Failed to send email to ${email}:`, emailError.message);
+        }
+      }
+
+      this.logger.log(`📧 Email notification process completed for ${data.type}`);
+    } catch (error) {
+      this.logger.error('❌ Email notification error:', error.message);
+    }
+  }
+
+  // Send individual notification email
+  private async sendNotificationEmail(email: string, data: SystemNotificationData) {
+    if (!this.gmailService) {
+      return;
+    }
+
+    try {
+      // Create email content based on notification type
+      const subject = `🔔 ${data.title} - Business Loan Management System`;
+      const emailContent = this.generateEmailContent(data);
+
+      // Use Gmail service to send email (adapt to your Gmail service method)
+      if (this.gmailService.sendNotificationEmail) {
+        await this.gmailService.sendNotificationEmail(email, subject, emailContent, data);
+      } else if (this.gmailService.sendViaSMTP) {
+        // Fallback to SMTP method if available
+        await this.gmailService.sendViaSMTP(email, 'Staff Member', '#', 'ADMIN');
+      } else {
+        this.logger.warn(`📧 No suitable email method found in Gmail service`);
+      }
+    } catch (error) {
+      this.logger.error(`❌ Error sending notification email to ${email}:`, error.message);
+      throw error;
+    }
+  }
+
+  // Generate email content based on notification type
+  private generateEmailContent(data: SystemNotificationData): string {
+    const timestamp = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2563eb;">${data.title}</h2>
+        <p style="font-size: 16px; color: #374151;">${data.message}</p>
+        
+        <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Notification Type:</strong> ${data.type}</p>
+          <p><strong>Priority:</strong> ${data.priority}</p>
+          <p><strong>Time:</strong> ${timestamp}</p>
+        </div>
+        
+        <p style="color: #6b7280; font-size: 14px;">
+          This is an automated notification from the Business Loan Management System.
+          Please log in to the dashboard for more details.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+        <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+          Business Loan Management System<br>
+          Automated Notification Service
+        </p>
+      </div>
+    `;
   }
 
   // Enhanced helper methods for detailed enquiry status tracking
