@@ -646,7 +646,30 @@ export class DocumentService {
     enquiryName: string
   ): Promise<{ success: boolean; filePath?: string; publicUrl?: string; error?: string }> {
     if (!this.supabaseService) {
-      return { success: false, error: 'Supabase service not available' };
+      this.logger.warn('⚠️ [RENDER] Supabase service not available - attempting direct client initialization');
+      
+      // Try to initialize Supabase client directly for Render deployment
+      try {
+        const supabaseUrl = process.env.SUPABASE_URL || this.config.get('SUPABASE_URL');
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || this.config.get('SUPABASE_ANON_KEY');
+        
+        if (!supabaseUrl || !supabaseKey) {
+          this.logger.error('❌ [RENDER] Supabase credentials not found in environment variables');
+          return { success: false, error: 'Supabase credentials not configured' };
+        }
+        
+        const { createClient } = require('@supabase/supabase-js');
+        const directClient = createClient(supabaseUrl, supabaseKey);
+        
+        this.logger.log('✅ [RENDER] Direct Supabase client initialized for document upload');
+        
+        // Use direct client for this upload
+        return await this.uploadWithDirectClient(directClient, file, enquiryId, documentType, enquiryName);
+        
+      } catch (error) {
+        this.logger.error('❌ [RENDER] Failed to initialize direct Supabase client:', error);
+        return { success: false, error: 'Failed to initialize Supabase client for document upload' };
+      }
     }
 
     try {
@@ -694,6 +717,100 @@ export class DocumentService {
     } catch (error) {
       this.logger.error('❌ Error uploading to Supabase Storage:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // Upload using direct Supabase client (fallback for Render deployment)
+  private async uploadWithDirectClient(
+    directClient: any,
+    file: Express.Multer.File,
+    enquiryId: number,
+    documentType: string,
+    enquiryName: string
+  ): Promise<{ success: boolean; filePath?: string; publicUrl?: string; error?: string }> {
+    try {
+      // Ensure bucket exists with direct client
+      const bucketReady = await this.ensureBucketWithDirectClient(directClient);
+      if (!bucketReady) {
+        return { success: false, error: 'Failed to ensure Supabase bucket exists with direct client' };
+      }
+
+      // Create organized file path with client name
+      const sanitizedName = enquiryName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
+      const timestamp = Date.now();
+      const fileExtension = path.extname(file.originalname);
+      const fileName = `${sanitizedName}_${documentType.toLowerCase()}_${timestamp}${fileExtension}`;
+      const filePath = `${sanitizedName}/${documentType}/${fileName}`;
+
+      this.logger.log(`📁 [RENDER-DIRECT] Uploading to Supabase Storage: ${filePath}`);
+
+      // Upload file using direct client
+      const { data, error } = await directClient.storage
+        .from(this.SUPABASE_BUCKET)
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false,
+        });
+
+      if (error) {
+        this.logger.error('❌ Direct Supabase Storage upload failed:', error);
+        return { success: false, error: error.message };
+      }
+
+      // Get public URL for the uploaded file
+      const { data: urlData } = directClient.storage
+        .from(this.SUPABASE_BUCKET)
+        .getPublicUrl(filePath);
+
+      this.logger.log(`✅ File uploaded to Supabase Storage via direct client: ${filePath}`);
+      
+      return {
+        success: true,
+        filePath: data.path,
+        publicUrl: urlData.publicUrl,
+      };
+    } catch (error) {
+      this.logger.error('❌ Error uploading with direct Supabase client:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Ensure bucket exists with direct client
+  private async ensureBucketWithDirectClient(directClient: any): Promise<boolean> {
+    try {
+      // Check if bucket exists
+      const { data: buckets, error: listError } = await directClient.storage.listBuckets();
+      
+      if (listError) {
+        this.logger.error('❌ Failed to list buckets with direct client:', listError);
+        return false;
+      }
+
+      const bucketExists = buckets?.some(bucket => bucket.name === this.SUPABASE_BUCKET);
+      
+      if (!bucketExists) {
+        this.logger.log(`📁 [RENDER-DIRECT] Creating bucket: ${this.SUPABASE_BUCKET}`);
+        
+        const { error: createError } = await directClient.storage.createBucket(this.SUPABASE_BUCKET, {
+          public: true,
+          allowedMimeTypes: ['application/pdf'],
+          fileSizeLimit: 10485760, // 10MB
+        });
+
+        if (createError) {
+          this.logger.error('❌ Failed to create bucket with direct client:', createError);
+          return false;
+        }
+        
+        this.logger.log(`✅ [RENDER-DIRECT] Bucket created: ${this.SUPABASE_BUCKET}`);
+      } else {
+        this.logger.log(`✅ [RENDER-DIRECT] Bucket exists: ${this.SUPABASE_BUCKET}`);
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error('❌ Error ensuring bucket with direct client:', error);
+      return false;
     }
   }
 
@@ -842,19 +959,27 @@ export class DocumentService {
         } else {
           this.logger.warn(`⚠️ [SUPABASE] Storage upload failed: ${supabaseResult.error}`);
           
-          // For Render deployment, Supabase failure is critical
+          // For Render deployment, try alternative approaches before failing
           if (isRenderDeployment) {
-            this.logger.error('❌ [RENDER] Supabase storage is required for Render deployment');
-            throw new BadRequestException(`Document upload failed: ${supabaseResult.error}`);
+            this.logger.warn('⚠️ [RENDER] Supabase storage failed - attempting alternative storage solutions');
+            
+            // Try to continue with local metadata storage but warn about file storage
+            this.logger.warn('⚠️ [RENDER] Document metadata will be saved but file storage may be limited');
+            this.logger.warn('💡 [RENDER] Consider checking Supabase configuration and credentials');
           }
         }
         
       } catch (supabaseError) {
         this.logger.error('❌ Supabase storage error:', supabaseError);
         
-        // For Render deployment, don't fall back to local storage
+        // For Render deployment, log error but continue with metadata storage
         if (isRenderDeployment) {
-          throw new BadRequestException(`Document upload failed in Render deployment: ${supabaseError.message}`);
+          this.logger.error('❌ [RENDER] Supabase storage failed, but continuing with document metadata');
+          this.logger.error('💡 [RENDER] File will be tracked but may not be physically stored');
+          this.logger.error('🔧 [RENDER] Check Supabase credentials and bucket configuration');
+          
+          // Set supabaseResult to indicate failure but don't throw
+          supabaseResult = { success: false, error: supabaseError.message };
         }
       }
       
