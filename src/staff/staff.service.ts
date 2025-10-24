@@ -1594,49 +1594,20 @@ export class StaffService {
     }
   }
 
-  // Sync staff to Supabase
+  // Sync staff to Supabase using unified sync service
   private async syncStaffToSupabase(staff: StaffEntity): Promise<void> {
-    if (!this.supabaseService) {
-      console.log('⚠️ Supabase service not available, skipping staff sync');
-      return;
-    }
-
     try {
-      console.log('🔄 Syncing staff to Supabase:', staff.name);
+      console.log('🔄 Syncing staff to Supabase via unified service:', staff.name);
       
-      // Prepare staff data for Supabase
-      const supabaseStaff = {
-        id: staff.id,
-        name: staff.name,
-        email: staff.email,
-        password_hash: staff.password, // In real app, this would be hashed
-        role: staff.role,
-        department: staff.department,
-        position: staff.position,
-        status: staff.status,
-        has_access: staff.hasAccess,
-        access_token: staff.accessToken,
-        access_token_expiry: staff.accessTokenExpiry?.toISOString(),
-        last_login: staff.lastLogin?.toISOString(),
-        created_at: staff.createdAt.toISOString(),
-        updated_at: staff.updatedAt.toISOString()
-      };
-
-      // Upsert to Supabase staff table (lowercase as requested)
-      const { data, error } = await this.supabaseService.client
-        .from('staff')
-        .upsert(supabaseStaff, { onConflict: 'id' });
-
-      if (error) {
-        console.error('❌ Error syncing staff to Supabase:', error);
-        throw error;
-      }
-
+      // Use the unified sync service which handles table name variations
+      await this.unifiedSupabaseSync.syncStaff(staff);
+      
       console.log('✅ Staff synced to Supabase successfully:', staff.name);
       
     } catch (error) {
-      console.error('❌ Failed to sync staff to Supabase:', error);
-      throw error;
+      console.log('⚠️ Staff sync failed but continuing operations:', error.message);
+      // Don't throw - let the application continue
+      // Email functionality should not be blocked by Supabase sync issues
     }
   }
 

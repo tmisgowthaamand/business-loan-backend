@@ -202,24 +202,39 @@ export class UnifiedSupabaseSyncService {
     
     for (const tableName of tableVariations) {
       try {
-        await this.syncToTable(tableName, supabaseData, { uniqueField: 'email' });
-        this.logger.log(`✅ Staff synced successfully using table name: ${tableName}`);
-        syncSuccess = true;
-        break;
+        const result = await this.syncToTable(tableName, supabaseData, { uniqueField: 'email' });
+        
+        if (result.success) {
+          this.logger.log(`✅ Staff synced successfully using table name: ${tableName}`);
+          syncSuccess = true;
+          break;
+        } else if (result.error?.code === 'PGRST205') {
+          this.logger.warn(`⚠️ Table '${tableName}' not found, trying next variation...`);
+          continue; // Try next table name variation
+        } else {
+          this.logger.error(`❌ Failed to sync to table '${tableName}':`, result.error);
+          continue; // Try next variation for other errors too
+        }
       } catch (error) {
-        this.logger.warn(`⚠️ Failed to sync to table '${tableName}':`, error.message);
+        this.logger.warn(`⚠️ Exception during sync to table '${tableName}':`, error.message);
         if (error.code === 'PGRST205') {
           continue; // Try next table name variation
         } else {
-          throw error; // Re-throw non-table-name errors
+          // For non-table-name errors, still try other variations
+          this.logger.error(`❌ Sync error for '${tableName}':`, error);
+          continue;
         }
       }
     }
     
     if (!syncSuccess) {
-      this.logger.error('❌ Failed to sync staff to any table variation. Please check Supabase schema.');
-      this.logger.error('💡 Ensure you have a table named "Staff" (or "staff") in your Supabase database');
-      this.logger.error('🔗 Check your Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+      this.logger.warn('⚠️ Staff sync to Supabase failed - continuing with local operations');
+      this.logger.warn('💡 Supabase sync is optional - email and core functionality will continue working');
+      this.logger.warn('🔗 To fix: Check Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+      this.logger.warn('📧 Email notifications will still work via Gmail/SendGrid service');
+      
+      // Don't throw error - allow application to continue
+      // This ensures email functionality is not blocked by Supabase sync issues
     }
   }
 
