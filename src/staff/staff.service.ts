@@ -48,7 +48,7 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Business Loan Management',
+        clientName: 'Rajesh Kumar, Priya Sharma, Amit Patel',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T09:00:00.000Z'),
@@ -66,7 +66,7 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Business Loan Operations',
+        clientName: 'Sunita Gupta, Vikram Singh',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T10:00:00.000Z'),
@@ -84,7 +84,7 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Client Relations',
+        clientName: 'Anita Desai, Ravi Mehta, Sanjay Joshi',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T11:00:00.000Z'),
@@ -102,7 +102,7 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Marketing Operations',
+        clientName: 'Neha Agarwal, Rohit Sharma',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T12:00:00.000Z'),
@@ -120,7 +120,7 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Operations Support',
+        clientName: 'Available for Assignment - Ready for New Clients',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T13:00:00.000Z'),
@@ -129,8 +129,8 @@ export class StaffService {
       },
       {
         id: 6,
-        name: 'Nanciya',
-        email: 'Anmunanciya@gmail.com',
+        name: 'Nunciya',
+        email: 'tmsnunciya59@gmail.com',
         password: '12345678',
         role: StaffRole.ADMIN,
         department: 'Administration',
@@ -138,25 +138,44 @@ export class StaffService {
         status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
-        clientName: 'Administrative Support',
+        clientName: 'Deepak Verma',
         accessToken: this.generateAccessToken(),
         accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T14:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
       },
+      {
+        id: 7,
+        name: 'Admin User',
+        email: 'admin@gmail.com',
+        password: 'admin123',
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'System Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Manish Gupta',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T15:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
     ];
 
-    this.nextId = 7; // Next available ID
+    this.nextId = 8; // Next available ID
     
     this.logger.log(`✅ Initialized with ${this.staff.length} staff members:`);
     this.staff.forEach(staff => {
       this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.department}`);
     });
     
-    this.logger.log('🔐 LOGIN CREDENTIALS (Password: 12345678 for all):');
+    this.logger.log('🔐 LOGIN CREDENTIALS:');
     this.staff.forEach(staff => {
-      this.logger.log(`   - ${staff.name}: ${staff.email} / 12345678 (${staff.role})`);
+      const password = staff.email === 'admin@gmail.com' ? 'admin123' : '12345678';
+      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role})`);
     });
     
     // Save to file

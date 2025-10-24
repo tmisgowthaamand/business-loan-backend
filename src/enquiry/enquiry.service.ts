@@ -63,10 +63,10 @@ export class EnquiryService {
         loanAmount: 500000,
         source: 'ONLINE_APPLICATION',
         interestStatus: 'INTERESTED',
-        staffId: 1,
+        staffId: 4,
         assignedStaff: 'Pankil',
         staff: {
-          id: 1,
+          id: 4,
           name: 'Pankil',
           email: 'govindamarketing9998@gmail.com'
         },
@@ -85,11 +85,11 @@ export class EnquiryService {
         source: 'ONLINE_APPLICATION',
         interestStatus: 'INTERESTED',
         staffId: 1,
-        assignedStaff: 'Pankil',
+        assignedStaff: 'Perivi',
         staff: {
           id: 1,
-          name: 'Pankil',
-          email: 'govindamarketing9998@gmail.com'
+          name: 'Perivi',
+          email: 'gowthaamankrishna1998@gmail.com'
         },
         documents: [],
         createdAt: new Date().toISOString(),
@@ -126,10 +126,10 @@ export class EnquiryService {
         loanAmount: 300000,
         source: 'ONLINE_APPLICATION',
         interestStatus: 'INTERESTED',
-        staffId: 3,
+        staffId: 5,
         assignedStaff: 'Dinesh',
         staff: {
-          id: 3,
+          id: 5,
           name: 'Dinesh',
           email: 'dinesh@gmail.com'
         },
@@ -147,10 +147,10 @@ export class EnquiryService {
         loanAmount: 1000000,
         source: 'ONLINE_APPLICATION',
         interestStatus: 'INTERESTED',
-        staffId: 4,
+        staffId: 3,
         assignedStaff: 'Harish',
         staff: {
-          id: 4,
+          id: 3,
           name: 'Harish',
           email: 'newacttmis@gmail.com'
         },
@@ -168,11 +168,11 @@ export class EnquiryService {
         loanAmount: 600000,
         source: 'ONLINE_APPLICATION',
         interestStatus: 'INTERESTED',
-        staffId: 5,
-        assignedStaff: 'Nanciya',
+        staffId: 6,
+        assignedStaff: 'Nunciya',
         staff: {
-          id: 5,
-          name: 'Nanciya',
+          id: 6,
+          name: 'Nunciya',
           email: 'tmsnunciya59@gmail.com'
         },
         documents: [],
@@ -352,6 +352,25 @@ export class EnquiryService {
     // Save using persistence service for production compatibility
     await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
     console.log('📋 Created', this.enquiriesStorage.length, 'COMPLETE demo enquiries for deployment');
+    
+    // Create notifications for all enquiries
+    try {
+      for (const enquiry of this.enquiriesStorage) {
+        await this.notificationsService.notifyNewEnquiry(
+          enquiry.id,
+          enquiry.name,
+          {
+            loanAmount: enquiry.loanAmount,
+            businessType: enquiry.businessType,
+            mobile: enquiry.mobile,
+            assignedStaff: enquiry.assignedStaff
+          }
+        );
+      }
+      console.log('🔔 Created notifications for all', this.enquiriesStorage.length, 'enquiries');
+    } catch (error) {
+      console.log('⚠️ Error creating notifications:', error.message);
+    }
   }
 
   private async saveEnquiries() {
