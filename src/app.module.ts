@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service';
 import { AppService } from './app.service';
+import { AppController } from './app.controller';
 import { CommonModule } from './common/common.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { HealthModule } from './health/health.module';
@@ -17,6 +18,7 @@ import { StaffModule } from './staff/staff.module';
 import { GeminiModule } from './gemini/gemini.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TransactionModule } from './transaction/transaction.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -37,8 +39,10 @@ import { TransactionModule } from './transaction/transaction.module';
     GeminiModule,
     NotificationsModule,
     TransactionModule,
+    DashboardModule,
     SupabaseModule, // Moved to end to avoid dependency issues
   ],
+  controllers: [AppController],
   providers: [PrismaService, AppService],
 })
 export class AppModule {}

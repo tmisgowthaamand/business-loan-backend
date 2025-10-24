@@ -473,6 +473,16 @@ export class EnquiryService {
 
   // Enhanced method to automatically sync enquiry to Supabase for Vercel & Render
   private async syncToSupabase(enquiry: any): Promise<void> {
+    // Only sync in production environments (Render/Vercel)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    
+    if (!isProduction && !isRender && !isVercel) {
+      console.log('🔧 [DEV] Skipping Supabase sync in development mode');
+      return;
+    }
+    
     try {
       console.log('🚀 [DEPLOYMENT] Auto-syncing enquiry to Supabase:', enquiry.name);
       console.log('🌍 Environment:', {

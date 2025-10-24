@@ -32,6 +32,16 @@ export class UnifiedSupabaseSyncService {
     skipDuplicateCheck?: boolean;
     upsert?: boolean;
   } = {}): Promise<{ success: boolean; data?: any; error?: any }> {
+    // Only sync in production environments (Render/Vercel)
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    
+    if (!isProduction && !isRender && !isVercel) {
+      this.logger.log(`🔧 [DEV] Skipping Supabase sync for ${tableName} in development mode`);
+      return { success: true, data: null };
+    }
+    
     try {
       this.logger.log(`🔄 [DEPLOYMENT] Auto-syncing to Supabase table: ${tableName}`);
       

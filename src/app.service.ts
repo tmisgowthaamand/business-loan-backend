@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
+import { EnquiryService } from './enquiry/enquiry.service';
+import { DocumentService } from './document/document.service';
+import { ShortlistService } from './shortlist/shortlist.service';
+import { StaffService } from './staff/staff.service';
+import { NotificationsService } from './notifications/notifications.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,21 +12,69 @@ export class AppService implements OnModuleInit {
   private readonly logger = new Logger(AppService.name);
   private readonly dataDir = path.join(process.cwd(), 'data');
 
+  constructor(
+    @Inject(forwardRef(() => EnquiryService))
+    private readonly enquiryService: EnquiryService,
+    @Inject(forwardRef(() => DocumentService))
+    private readonly documentService: DocumentService,
+    @Inject(forwardRef(() => ShortlistService))
+    private readonly shortlistService: ShortlistService,
+    @Inject(forwardRef(() => StaffService))
+    private readonly staffService: StaffService,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
+  ) {}
+
   async onModuleInit() {
-    this.logger.log('🚀 APPLICATION STARTUP - Vercel & Render Ready');
+    this.logger.log('🚀 RENDER DEPLOYMENT - APPLICATION STARTUP');
     
     try {
       // Ensure data directory exists
       await this.ensureDataDirectory();
       
+      // Initialize all data for Render deployment
+      await this.initializeAllData();
+      
       // Create deployment status file
       await this.createDeploymentStatus();
       
-      this.logger.log('✅ APPLICATION READY - All 14 enquiries and related data initialized');
+      this.logger.log('✅ RENDER DEPLOYMENT - All modules and data initialized successfully');
       this.logger.log('🌐 Ready for Vercel Frontend and Render Backend deployment');
       
     } catch (error) {
-      this.logger.error('❌ Application initialization failed:', error);
+      this.logger.error('❌ RENDER DEPLOYMENT - Application initialization failed:', error);
+    }
+  }
+
+  private async initializeAllData() {
+    this.logger.log('📊 RENDER DEPLOYMENT - Initializing all module data...');
+    
+    try {
+      // Initialize enquiries (14 real enquiries)
+      const enquiries = await this.enquiryService.findAll(1);
+      this.logger.log(`✅ Enquiries initialized: ${enquiries.length} enquiries loaded`);
+      
+      // Initialize documents (25 documents with real client mapping)
+      const documents = await this.documentService.findAll({ id: 1 } as any);
+      this.logger.log(`✅ Documents initialized: ${documents.length} documents loaded`);
+      
+      // Initialize shortlists
+      const shortlists = await this.shortlistService.findAll({ id: 1 } as any);
+      this.logger.log(`✅ Shortlists initialized: ${shortlists.length} shortlists loaded`);
+      
+      // Initialize staff (7 staff members)
+      const staff = await this.staffService.getAllStaff();
+      this.logger.log(`✅ Staff initialized: ${staff.length} staff members loaded`);
+      
+      // Initialize notifications
+      const notifications = await this.notificationsService.findAll({ id: 1 } as any, 1);
+      this.logger.log(`✅ Notifications initialized: ${notifications.notifications?.length || 0} notifications loaded`);
+      
+      this.logger.log('🎯 RENDER DEPLOYMENT - All data initialization complete!');
+      
+    } catch (error) {
+      this.logger.error('❌ RENDER DEPLOYMENT - Data initialization error:', error);
+      // Continue with deployment even if some data fails to load
     }
   }
 

@@ -172,11 +172,18 @@ export class StaffService {
       this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.department}`);
     });
     
-    this.logger.log('🔐 LOGIN CREDENTIALS:');
+    this.logger.log('🔐 RENDER DEPLOYMENT LOGIN CREDENTIALS:');
+    this.logger.log('   ✅ ALL STAFF MEMBERS READY FOR LOGIN:');
     this.staff.forEach(staff => {
       const password = staff.email === 'admin@gmail.com' ? 'admin123' : '12345678';
-      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role})`);
+      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role}) - ${staff.status}`);
     });
+    
+    this.logger.log('🚀 RENDER DEPLOYMENT STAFF SUMMARY:');
+    this.logger.log(`   - Total Staff: ${this.staff.length}`);
+    this.logger.log(`   - Active Staff: ${this.staff.filter(s => s.status === StaffStatus.ACTIVE).length}`);
+    this.logger.log(`   - Admin Staff: ${this.staff.filter(s => s.role === StaffRole.ADMIN).length}`);
+    this.logger.log(`   - Employee Staff: ${this.staff.filter(s => s.role === StaffRole.EMPLOYEE).length}`);
     
     // Save to file
     this.saveStaffToFile();

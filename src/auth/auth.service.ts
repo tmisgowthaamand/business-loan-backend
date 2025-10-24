@@ -39,7 +39,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    console.log('🔐 Auth service login called with:', dto.email);
+    console.log('🔐 RENDER DEPLOYMENT - Auth service login called with:', dto.email);
     console.log('🌍 Environment:', {
       nodeEnv: process.env.NODE_ENV,
       isVercel: process.env.VERCEL === '1',
@@ -48,14 +48,16 @@ export class AuthService {
     
     try {
       // Use staff service to authenticate
+      console.log('🔍 Attempting staff authentication for:', dto.email);
       const authResult = await this.staffService.authenticateStaff(dto.email, dto.password);
       
       if (!authResult) {
         console.log('❌ Invalid credentials for:', dto.email);
+        console.log('🔍 Available staff emails:', await this.getAvailableStaffEmails());
         throw new ForbiddenException('Invalid credentials. Please check your email and password.');
       }
 
-      console.log('✅ Staff authenticated:', authResult.staff.name, '- Ready for deployment');
+      console.log('✅ Staff authenticated successfully:', authResult.staff.name, '- Ready for Render deployment');
       
       // Return the auth token and user data in the expected format
       const response = {
@@ -64,19 +66,28 @@ export class AuthService {
           id: authResult.staff.id,
           name: authResult.staff.name,
           email: authResult.staff.email,
-          role: authResult.staff.role
+          role: authResult.staff.role,
+          department: authResult.staff.department,
+          status: authResult.staff.status
         }
       };
       
-      console.log('🚀 Login successful for deployment:', {
+      console.log('🚀 RENDER DEPLOYMENT - Login successful:', {
         user: response.user.name,
         role: response.user.role,
-        hasToken: !!response.access_token
+        department: response.user.department,
+        hasToken: !!response.access_token,
+        tokenLength: response.access_token?.length || 0
       });
       
       return response;
     } catch (error) {
-      console.error('❌ Login error:', error);
+      console.error('❌ RENDER DEPLOYMENT - Login error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        email: dto.email
+      });
       
       // Enhanced error handling for deployments
       if (error instanceof ForbiddenException) {
@@ -84,6 +95,16 @@ export class AuthService {
       }
       
       throw new ForbiddenException('Authentication failed. Please try again.');
+    }
+  }
+
+  private async getAvailableStaffEmails(): Promise<string[]> {
+    try {
+      const allStaff = await this.staffService.getAllStaff();
+      return allStaff.map(staff => staff.email);
+    } catch (error) {
+      console.log('Could not get staff emails:', error);
+      return [];
     }
   }
 
