@@ -13,6 +13,21 @@ export class StaffController {
     console.log('📍 Staff routes should be available at /api/staff');
   }
 
+  private getFrontendUrl(): string {
+    const isRender = process.env.RENDER === 'true';
+    const frontendUrl = this.configService.get('FRONTEND_URL');
+    
+    if (frontendUrl) {
+      return frontendUrl;
+    }
+    
+    if (isRender) {
+      return 'https://business-loan-frontend.vercel.app';
+    }
+    
+    return 'http://localhost:3001';
+  }
+
   @Get('health')
   healthCheck() {
     console.log('🏥 Staff health check endpoint called');
@@ -599,15 +614,28 @@ export class StaffController {
                 <div class="next-steps">
                     <h4>🎉 What's Next?</h4>
                     <ul>
-                        <li>Your account is now active and ready to use</li>
-                        <li>You can now access the Business Loan Management System</li>
-                        <li>Contact your administrator for login credentials</li>
+                        <li><strong>Your account is now ACTIVE and ready to use!</strong></li>
+                        <li><strong>You can now login to the Business Loan Management System</strong></li>
+                        <li><strong>Use your email and the password from your verification email</strong></li>
                     </ul>
                 </div>
                 
-                <a href="mailto:admin@businessloan.com" class="btn">
-                    📧 Contact Support
-                </a>
+                <div style="background: #e6fffa; border-left: 4px solid #38b2ac; padding: 15px; margin: 20px 0; text-align: left; border-radius: 0 8px 8px 0;">
+                    <h4>🔑 Login Information:</h4>
+                    <p><strong>Email:</strong> ${result.staff.email}</p>
+                    <p><strong>Password:</strong> Use the password from your verification email</p>
+                    <p><strong>Role:</strong> ${result.staff.role}</p>
+                    <p style="color: #059669; font-weight: 600; margin-top: 10px;">✅ Your account is now ACTIVE - you can login immediately!</p>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <a href="${this.getFrontendUrl()}" class="btn" style="margin-right: 10px;">
+                        🏠 Go to Login Page
+                    </a>
+                    <a href="mailto:admin@businessloan.com" class="btn" style="background: #6b7280;">
+                        📧 Contact Support
+                    </a>
+                </div>
             </div>
         </body>
         </html>
@@ -805,6 +833,80 @@ export class StaffController {
         error: error.message,
         timestamp: new Date().toISOString(),
         status: 'ERROR'
+      };
+    }
+  }
+
+  @Post('verify/:id')
+  async verifyStaffMember(@Param('id') id: string) {
+    try {
+      console.log('✅ Verifying staff member:', id);
+      const result = await this.staffService.verifyStaffMember(+id);
+      return {
+        message: result.activated ? 'Staff member verified and activated successfully' : 'Staff member was already verified',
+        staff: result.staff,
+        activated: result.activated,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error verifying staff member:', error);
+      throw new BadRequestException(`Failed to verify staff member: ${error.message}`);
+    }
+  }
+
+  @Post('test/render-login')
+  async testRenderLogin(@Body() body: { email?: string; password?: string }) {
+    try {
+      const testEmail = body.email || 'admin@gmail.com';
+      const testPassword = body.password || 'admin123';
+      
+      console.log(`🚀 [RENDER] Testing login for: ${testEmail}`);
+      
+      const result = await this.staffService.authenticateStaff(testEmail, testPassword);
+      
+      if (result) {
+        return {
+          success: true,
+          message: 'Login test successful - Staff member authenticated',
+          staff: {
+            name: result.staff.name,
+            email: result.staff.email,
+            role: result.staff.role,
+            status: result.staff.status,
+            hasAccess: result.staff.hasAccess,
+            verified: result.staff.verified
+          },
+          authToken: result.authToken ? 'Generated successfully' : 'Failed to generate',
+          timestamp: new Date().toISOString(),
+          environment: 'Render'
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Login test failed - Authentication rejected',
+          testCredentials: {
+            email: testEmail,
+            passwordProvided: !!testPassword
+          },
+          timestamp: new Date().toISOString(),
+          environment: 'Render',
+          troubleshooting: [
+            'Check if staff member exists in system',
+            'Verify staff status is ACTIVE',
+            'Confirm staff has access granted',
+            'Ensure email is verified',
+            'Check password is correct'
+          ]
+        };
+      }
+    } catch (error) {
+      console.error('Error testing Render login:', error);
+      return {
+        success: false,
+        message: 'Login test error',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        environment: 'Render'
       };
     }
   }

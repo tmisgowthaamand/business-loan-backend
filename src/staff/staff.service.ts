@@ -44,9 +44,9 @@ export class StaffService {
   }
 
   private initializeDefaultStaff() {
-    this.logger.log('🗄️ Staff service initialized - Loading all staff members');
+    this.logger.log('🗄️ Staff service initialized - Loading all staff members for Render deployment');
     
-    // Initialize with all staff members for production use
+    // Initialize with verified staff members ready for Render deployment
     this.staff = [
       {
         id: 1,
@@ -187,10 +187,10 @@ export class StaffService {
     });
     
     this.logger.log('🔐 RENDER DEPLOYMENT LOGIN CREDENTIALS:');
-    this.logger.log('   ✅ ALL STAFF MEMBERS READY FOR LOGIN:');
+    this.logger.log('   ✅ ALL STAFF MEMBERS READY FOR IMMEDIATE LOGIN:');
     this.staff.forEach(staff => {
-      const password = '12345678'; // All staff members now use the same password
-      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role}) - ${staff.status}`);
+      const password = staff.email === 'admin@gmail.com' ? 'admin123' : '12345678';
+      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role}) - ${staff.status} - VERIFIED`);
     });
     
     this.logger.log('🚀 RENDER DEPLOYMENT STAFF SUMMARY:');
@@ -424,7 +424,7 @@ export class StaffService {
   }
 
 
-  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
+  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean; verificationRequired: boolean }> {
     try {
       // Check staff management permissions - only admin@gmail.com can create staff
       this.checkStaffManagementPermission(currentUserEmail);
@@ -492,7 +492,7 @@ export class StaffService {
       if (error) {
         this.logger.warn(`⚠️ Supabase insert failed, using in-memory storage: ${error.message}`);
         
-        // Create staff in memory - immediately active for Render deployment
+        // Create staff in memory - PENDING status for email verification workflow
         const staffId = await this.idGeneratorService.generateStaffId();
         const isRenderDeployment = process.env.RENDER === 'true' || process.env.NODE_ENV === 'production';
         
@@ -504,16 +504,16 @@ export class StaffService {
           role: createStaffDto.role,
           department: createStaffDto.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
           position: createStaffDto.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
-          status: isRenderDeployment ? StaffStatus.ACTIVE : StaffStatus.PENDING, // Active immediately for Render
-          hasAccess: isRenderDeployment ? true : false, // Immediate access for Render
-          verified: isRenderDeployment ? true : false, // Verified immediately for Render
+          status: StaffStatus.PENDING, // Always start as PENDING for verification workflow
+          hasAccess: false, // No access until verified
+          verified: false, // Not verified until email verification
           clientName: createStaffDto.clientName || 'Available for Assignment',
-          accessToken: isRenderDeployment ? undefined : accessToken, // No token needed if immediately active
-          accessTokenExpiry: isRenderDeployment ? undefined : accessTokenExpiry,
+          accessToken: accessToken, // Always generate token for verification
+          accessTokenExpiry: accessTokenExpiry,
           createdAt: new Date(),
           updatedAt: new Date(),
           createdBy: 'Admin',
-          lastLogin: isRenderDeployment ? new Date() : undefined // Set initial login for Render
+          lastLogin: undefined // No login until verified
         };
         
         this.staff.push(newStaff);
@@ -587,14 +587,15 @@ export class StaffService {
               // Try webhook email service first for Render
               this.logger.log(`📧 [RENDER] Attempting webhook ${emailType} email to: ${createStaffDto.email}`);
               // Use existing sendAccessLink method for both cases
-              const webhookSuccess = await this.webhookEmailService.sendAccessLink(
+              emailSent = await this.webhookEmailService.sendAccessLink(
                 createStaffDto.email,
                 createStaffDto.name,
-                isRenderDeploy ? `Your account is ready! Login with: ${createStaffDto.email} / ${createStaffDto.password}` : accessToken,
-                createStaffDto.role
+                accessToken,
+                createStaffDto.role,
+                createStaffDto.password // Pass the login password
               );
               
-              if (webhookSuccess) {
+              if (emailSent) {
                 this.logger.log(`✅ [RENDER] Webhook ${emailType} email sent successfully to: ${createStaffDto.email}`);
               } else {
                 // Fallback to Gmail for Render
@@ -603,7 +604,7 @@ export class StaffService {
                 const gmailSuccess = await this.gmailService.sendAccessLink(
                   createStaffDto.email,
                   createStaffDto.name,
-                  isRenderDeploy ? `Your account is ready! Login with: ${createStaffDto.email} / ${createStaffDto.password}` : accessToken,
+                  accessToken,
                   createStaffDto.role
                 );
                 
@@ -682,7 +683,11 @@ export class StaffService {
       }
 
       this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
-      return { staff: staffEntity, emailSent };
+      return { 
+        staff: staffEntity, 
+        emailSent,
+        verificationRequired: staffEntity.status === StaffStatus.PENDING
+      };
     } catch (error) {
       this.logger.error('❌ Error creating staff:', error);
       throw error;
@@ -1322,12 +1327,27 @@ export class StaffService {
   }
 
   async authenticateStaff(email: string, password: string): Promise<{ staff: Omit<StaffEntity, 'password'>; authToken: string } | null> {
-    this.logger.log(`🔐 Attempting authentication for: ${email}`);
+    this.logger.log(`🔐 [RENDER] Attempting authentication for: ${email}`);
     
     const staff = this.staff.find(s => s.email === email);
     
-    if (!staff || !staff.hasAccess || staff.status !== StaffStatus.ACTIVE) {
-      this.logger.warn(`❌ Authentication failed for ${email}: Staff not found, no access, or inactive`);
+    if (!staff) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Staff not found in system`);
+      return null;
+    }
+    
+    if (!staff.hasAccess) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: No access granted`);
+      return null;
+    }
+    
+    if (staff.status !== StaffStatus.ACTIVE) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Status is ${staff.status}, must be ACTIVE`);
+      return null;
+    }
+    
+    if (!staff.verified) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Email not verified`);
       return null;
     }
 
@@ -1376,7 +1396,17 @@ export class StaffService {
       { expiresIn: '7d' }
     );
 
-    this.logger.log(`✅ Staff authenticated successfully: ${staff.email} (${staff.role}) - Ready for Vercel & Render deployment`);
+    this.logger.log(`✅ [RENDER] Staff authenticated successfully: ${staff.email} (${staff.role})`);
+    this.logger.log(`🎉 [RENDER] Login successful - User: ${staff.name}, Role: ${staff.role}, Status: ${staff.status}`);
+    
+    // Sync successful login to Supabase for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    if (isRender) {
+      this.logger.log(`🚀 [RENDER] Syncing login activity to Supabase for: ${staff.email}`);
+      this.syncStaffToSupabaseWithRetry(staff, 2).catch(error => {
+        this.logger.warn(`⚠️ [RENDER] Failed to sync login activity: ${error.message}`);
+      });
+    }
 
     const { password: _, ...staffWithoutPassword } = staff;
     return { staff: staffWithoutPassword, authToken };
@@ -1450,6 +1480,126 @@ export class StaffService {
         connected: false, 
         error: `Gmail test failed: ${error.message}` 
       };
+    }
+  }
+
+  async verifyStaffMember(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'>; activated: boolean }> {
+    try {
+      this.logger.log(`✅ Activating staff member with ID: ${staffId}`);
+      
+      // First check in-memory staff
+      let staff = this.staff.find(s => s.id === staffId);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
+      if (!staff) {
+        this.logger.log(`✅ Staff ID ${staffId} not found in memory, checking Supabase...`);
+        
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('id', staffId)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for staff:', error);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          this.logger.error(`Staff member with ID ${staffId} not found in Supabase either`);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: supabaseUser.inviteToken ? StaffStatus.PENDING : StaffStatus.ACTIVE,
+          hasAccess: !supabaseUser.inviteToken,
+          verified: !supabaseUser.inviteToken,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`✅ Found staff in Supabase: ${staff.name} (${staff.email})`);
+      }
+
+      // Check if already verified
+      if (staff.status === StaffStatus.ACTIVE && staff.verified) {
+        this.logger.log(`✅ Staff member ${staff.name} is already verified and active`);
+        const { password, ...staffWithoutPassword } = staff;
+        return { staff: staffWithoutPassword, activated: false };
+      }
+
+      // Activate the staff member
+      staff.status = StaffStatus.ACTIVE;
+      staff.hasAccess = true;
+      staff.verified = true;
+      staff.accessToken = undefined; // Clear verification token
+      staff.accessTokenExpiry = undefined;
+      staff.lastLogin = new Date(); // Set first login time
+      staff.updatedAt = new Date();
+
+      if (isSupabaseUser) {
+        // Update Supabase user
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: null,
+            tokenExpiry: null,
+            lastLogin: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', staffId);
+
+        if (updateError) {
+          this.logger.error('Error updating Supabase user:', updateError);
+          throw new Error('Failed to activate staff member in database');
+        }
+        
+        this.logger.log(`✅ Activated Supabase user ${staff.email}`);
+      } else {
+        // Update in-memory staff
+        const staffIndex = this.staff.findIndex(s => s.id === staffId);
+        if (staffIndex !== -1) {
+          this.staff[staffIndex] = staff;
+          this.saveStaffToFile(); // Save to persistent storage
+        }
+        
+        this.logger.log(`✅ Activated in-memory staff ${staff.email}`);
+      }
+
+      // Create notification for staff activation
+      try {
+        await this.notificationsService.createSystemNotification({
+          type: 'STAFF_VERIFIED',
+          title: 'Staff Member Verified',
+          message: `${staff.name} has been verified and activated`,
+          priority: 'MEDIUM',
+        });
+        this.logger.log(`🔔 Notification sent for staff activation: ${staff.name}`);
+      } catch (error) {
+        this.logger.error('Failed to send notification for staff activation:', error);
+      }
+
+      // Return staff without password
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, activated: true };
+    } catch (error) {
+      this.logger.error('❌ Error verifying staff member:', error);
+      throw error;
     }
   }
 
@@ -1547,14 +1697,29 @@ export class StaffService {
         this.logger.log(`📧 Updated in-memory staff ${staff.email} with new verification token`);
       }
 
-      // Send verification email
+      // Send verification email with enhanced message
       this.logger.log(`📧 Sending verification email to: ${staff.email}`);
-      const emailSent = await this.gmailService.sendAccessLink(
-        staff.email,
-        staff.name,
-        staff.accessToken,
-        staff.role
-      );
+      
+      // Use webhook email service for Render deployment, Gmail for others
+      const isRender = process.env.RENDER === 'true';
+      let emailSent = false;
+      
+      if (isRender) {
+        emailSent = await this.webhookEmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role,
+          staff.password // Include login password for resend emails too
+        );
+      } else {
+        emailSent = await this.gmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role
+        );
+      }
 
       this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to ${staff.email}`);
 
