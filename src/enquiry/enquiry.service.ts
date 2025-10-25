@@ -11,6 +11,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { PersistenceService } from '../common/services/persistence.service';
 import { IdGeneratorService } from '../common/services/id-generator.service';
 import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
+import { AutoSyncService } from '../database/auto-sync.service';
 import { CreateEnquiryDto, UpdateEnquiryDto } from './dto';
 import { User } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -31,6 +32,7 @@ export class EnquiryService {
     @Inject(forwardRef(() => NotificationsService))
     private notificationsService: NotificationsService,
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
+    @Optional() private autoSyncService: AutoSyncService,
     @Inject(forwardRef(() => import('../staff/staff.service').then(m => m.StaffService)))
     @Optional() private staffService?: any,
   ) {
@@ -511,9 +513,16 @@ export class EnquiryService {
     await this.saveEnquiries();
     console.log('✅ Enquiry saved to local storage:', mockEnquiry.name);
     
-    // 2. Auto-sync to Supabase using unified sync service (non-blocking)
+    // 2. Auto-sync to Supabase using new auto-sync service (non-blocking)
+    if (this.autoSyncService) {
+      this.autoSyncService.syncEnquiry(mockEnquiry).catch(error => {
+        console.error('❌ Failed to auto-sync enquiry to database:', error);
+      });
+    }
+    
+    // 3. Legacy auto-sync using unified sync service (non-blocking)
     this.autoSyncEnquiry(mockEnquiry).catch(error => {
-      console.error('❌ Failed to auto-sync enquiry:', error);
+      console.error('❌ Failed to legacy auto-sync enquiry:', error);
     });
     
     // 3. Create notification for new enquiry with detailed information

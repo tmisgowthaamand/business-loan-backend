@@ -160,7 +160,7 @@ export class StaffService {
         id: 7,
         name: 'Admin User',
         email: 'admin@gmail.com',
-        password: 'admin123',
+        password: '12345678',
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'System Administrator',
@@ -186,7 +186,7 @@ export class StaffService {
     this.logger.log('🔐 RENDER DEPLOYMENT LOGIN CREDENTIALS:');
     this.logger.log('   ✅ ALL STAFF MEMBERS READY FOR LOGIN:');
     this.staff.forEach(staff => {
-      const password = staff.email === 'admin@gmail.com' ? 'admin123' : '12345678';
+      const password = '12345678'; // All staff members now use the same password
       this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role}) - ${staff.status}`);
     });
     
@@ -282,7 +282,7 @@ export class StaffService {
         id: 1,
         name: 'Admin User',
         email: 'admin@gmail.com',
-        password: await bcrypt.hash('admin123', 10),
+        password: await bcrypt.hash('12345678', 10),
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'System Administrator',
@@ -376,9 +376,9 @@ export class StaffService {
       },
       {
         id: 14,
-        name: 'Nanciya',
+        name: 'Nunciya',
         email: 'tmsnunciya59@gmail.com',
-        password: await bcrypt.hash('nanciya123', 10),
+        password: await bcrypt.hash('12345678', 10),
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'Administrator',

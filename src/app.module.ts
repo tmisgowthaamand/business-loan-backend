@@ -19,6 +19,7 @@ import { GeminiModule } from './gemini/gemini.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AutoSyncModule } from './database/auto-sync.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     NotificationsModule,
     TransactionModule,
     DashboardModule,
+    AutoSyncModule,
     SupabaseModule, // Moved to end to avoid dependency issues
   ],
   controllers: [AppController],

@@ -1,10 +1,14 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { StaffService } from './staff.service';
 import { CreateStaffDto, UpdateStaffDto, StaffRole } from './dto/staff.dto';
 
 @Controller('staff')
 export class StaffController {
-  constructor(private readonly staffService: StaffService) {
+  constructor(
+    private readonly staffService: StaffService,
+    private readonly configService: ConfigService
+  ) {
     console.log('👥 StaffController initialized - Staff Management System ready');
     console.log('📍 Staff routes should be available at /api/staff');
   }
@@ -17,6 +21,289 @@ export class StaffController {
       timestamp: new Date().toISOString(),
       status: 'healthy'
     };
+  }
+
+  @Post('test/quick-gmail-test')
+  async quickGmailTest(@Body() body: { email?: string }) {
+    const testEmail = body.email || 'perivihari8@gmail.com';
+    const isRender = process.env.RENDER === 'true';
+    
+    console.log('🚀 RENDER EMAIL TEST - SMART ROUTING');
+    console.log(`📧 Testing email delivery to: ${testEmail}`);
+    console.log(`🌐 Environment: ${isRender ? 'Render (SMTP often blocked)' : 'Local'}`);
+    
+    // Check SendGrid first (recommended for Render)
+    const sendGridApiKey = process.env.SENDGRID_API_KEY || this.configService.get('SENDGRID_API_KEY');
+    const sendGridFromEmail = process.env.SENDGRID_FROM_EMAIL || this.configService.get('SENDGRID_FROM_EMAIL');
+    
+    // Check Gmail credentials
+    const gmailEmail = process.env.GMAIL_EMAIL || this.configService.get('GMAIL_EMAIL');
+    const gmailPassword = process.env.GMAIL_APP_PASSWORD || this.configService.get('GMAIL_APP_PASSWORD');
+    
+    console.log(`📧 SendGrid API Key: ${sendGridApiKey ? 'SET (length: ' + sendGridApiKey.length + ')' : 'NOT SET'}`);
+    console.log(`📧 SendGrid From Email: ${sendGridFromEmail || 'NOT SET'}`);
+    console.log(`📧 Gmail Email: ${gmailEmail || 'NOT SET'}`);
+    console.log(`🔐 Gmail Password: ${gmailPassword ? 'SET (length: ' + gmailPassword.length + ')' : 'NOT SET'}`);
+    
+    // For Render, prioritize SendGrid
+    if (isRender && sendGridApiKey && sendGridFromEmail) {
+      console.log('🌐 RENDER: Using SendGrid (SMTP is often blocked)');
+      return this.testSendGridEmail(testEmail, sendGridApiKey, sendGridFromEmail);
+    }
+    
+    // For local or if SendGrid not available, try Gmail
+    if (!gmailEmail || !gmailPassword) {
+      return {
+        success: false,
+        message: 'Email credentials not configured',
+        details: {
+          platform: isRender ? 'Render' : 'Local',
+          sendGridConfigured: !!(sendGridApiKey && sendGridFromEmail),
+          gmailConfigured: !!(gmailEmail && gmailPassword),
+          recommendation: isRender ? 
+            'Use SendGrid for Render deployment (SMTP often blocked)' : 
+            'Configure Gmail or SendGrid credentials',
+          instructions: isRender ? [
+            '🌐 RENDER SETUP (Recommended):',
+            '1. Sign up at https://app.sendgrid.com',
+            '2. Verify sender identity: Settings > Sender Authentication',
+            '3. Create API key: Settings > API Keys',
+            '4. Set SENDGRID_API_KEY=SG.your-key in Render',
+            '5. Set SENDGRID_FROM_EMAIL=your-verified@email.com',
+            '6. Redeploy your Render service'
+          ] : [
+            'Set GMAIL_EMAIL environment variable',
+            'Set GMAIL_APP_PASSWORD environment variable',
+            'Make sure to use Gmail App Password (not regular password)'
+          ]
+        }
+      };
+    }
+
+    try {
+      // Create a simple nodemailer transporter
+      const nodemailer = require('nodemailer');
+      
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: gmailEmail,
+          pass: gmailPassword,
+        },
+        // Render-specific optimizations
+        connectionTimeout: 10000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
+        pool: false,
+        maxConnections: 1,
+      });
+
+      console.log('📧 Transporter created, attempting to send email...');
+
+      const mailOptions = {
+        from: {
+          name: 'Render Gmail Test',
+          address: gmailEmail
+        },
+        to: testEmail,
+        subject: '🧪 Render Gmail Test - Success!',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #10b981;">✅ Gmail Working on Render!</h2>
+            <p>Congratulations! Your Gmail SMTP configuration is working correctly on Render.</p>
+            <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
+              <h3 style="margin: 0; color: #059669;">Test Details:</h3>
+              <ul style="margin: 10px 0;">
+                <li><strong>Platform:</strong> Render</li>
+                <li><strong>Service:</strong> Gmail SMTP</li>
+                <li><strong>From:</strong> ${gmailEmail}</li>
+                <li><strong>Time:</strong> ${new Date().toISOString()}</li>
+                <li><strong>Status:</strong> SUCCESS</li>
+              </ul>
+            </div>
+            <p>Your email system is now ready for production use!</p>
+            <hr style="margin: 30px 0;">
+            <p style="color: #6b7280; font-size: 14px;">
+              This test email was sent from your Business Loan Management System on Render.
+            </p>
+          </div>
+        `
+      };
+
+      // Send with timeout
+      const sendPromise = transporter.sendMail(mailOptions);
+      const result = await Promise.race([
+        sendPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email timeout (10s)')), 10000)
+        )
+      ]);
+
+      console.log('✅ Email sent successfully!');
+      console.log(`📧 Message ID: ${(result as any).messageId}`);
+
+      return {
+        success: true,
+        message: 'Gmail test email sent successfully!',
+        details: {
+          recipient: testEmail,
+          sender: gmailEmail,
+          messageId: (result as any).messageId,
+          timestamp: new Date().toISOString(),
+          platform: 'Render',
+          status: 'Email delivered successfully'
+        }
+      };
+
+    } catch (error) {
+      console.error('❌ Gmail test failed:', error.message);
+      
+      let errorMessage = error.message;
+      let troubleshooting = [];
+
+      if (error.code === 'EAUTH') {
+        errorMessage = 'Gmail authentication failed';
+        troubleshooting = [
+          'Check if Gmail email is correct',
+          'Verify Gmail App Password is correct (not regular password)',
+          'Make sure 2-factor authentication is enabled on Gmail',
+          'Generate a new App Password from Gmail settings'
+        ];
+      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+        errorMessage = 'Connection failed - Render may be blocking SMTP';
+        troubleshooting = [
+          'Render may be blocking SMTP connections',
+          'Consider using SendGrid instead of Gmail SMTP',
+          'Check if Gmail SMTP is temporarily unavailable'
+        ];
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Email sending timed out';
+        troubleshooting = [
+          'Network timeout occurred',
+          'Render may have connection restrictions',
+          'Try SendGrid for better Render compatibility'
+        ];
+      }
+
+      return {
+        success: false,
+        message: `Gmail test failed: ${errorMessage}`,
+        details: {
+          error: error.message,
+          code: error.code,
+          troubleshooting: troubleshooting,
+          timestamp: new Date().toISOString(),
+          platform: 'Render'
+        }
+      };
+    }
+  }
+
+  private async testSendGridEmail(testEmail: string, apiKey: string, fromEmail: string) {
+    try {
+      const sgMail = require('@sendgrid/mail');
+      sgMail.setApiKey(apiKey);
+
+      const msg = {
+        to: testEmail,
+        from: {
+          email: fromEmail,
+          name: 'Business Loan System - Render Test'
+        },
+        subject: '🚀 Render SendGrid Test - Success!',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #10b981;">✅ SendGrid Working on Render!</h2>
+            <p>Congratulations! Your SendGrid email configuration is working correctly on Render.</p>
+            <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
+              <h3 style="margin: 0; color: #059669;">Test Details:</h3>
+              <ul style="margin: 10px 0;">
+                <li><strong>Platform:</strong> Render</li>
+                <li><strong>Service:</strong> SendGrid API</li>
+                <li><strong>From:</strong> ${fromEmail}</li>
+                <li><strong>Time:</strong> ${new Date().toISOString()}</li>
+                <li><strong>Status:</strong> SUCCESS</li>
+              </ul>
+            </div>
+            <p><strong>🎉 Your email system is now ready for production use!</strong></p>
+            <p>SendGrid is the recommended email service for Render deployments because SMTP connections are often blocked.</p>
+            <hr style="margin: 30px 0;">
+            <p style="color: #6b7280; font-size: 14px;">
+              This test email was sent from your Business Loan Management System on Render using SendGrid.
+            </p>
+          </div>
+        `
+      };
+
+      console.log('📧 Sending via SendGrid...');
+      const result = await sgMail.send(msg);
+      console.log('✅ SendGrid email sent successfully!');
+      console.log(`📧 Response status: ${result[0]?.statusCode || 'Unknown'}`);
+
+      return {
+        success: true,
+        message: 'SendGrid test email sent successfully!',
+        details: {
+          recipient: testEmail,
+          sender: fromEmail,
+          service: 'SendGrid API',
+          statusCode: result[0]?.statusCode,
+          messageId: result[0]?.headers?.['x-message-id'],
+          timestamp: new Date().toISOString(),
+          platform: 'Render',
+          status: 'Email delivered via SendGrid'
+        }
+      };
+    } catch (error) {
+      console.error('❌ SendGrid test failed:', error.message);
+      
+      let errorMessage = error.message;
+      let troubleshooting = [];
+
+      if (error.response?.body?.errors) {
+        const errors = error.response.body.errors;
+        console.error('📧 SendGrid API errors:', JSON.stringify(errors, null, 2));
+        
+        const senderError = errors.find(err => 
+          err.message?.includes('verified Sender Identity') || 
+          err.field === 'from'
+        );
+        
+        if (senderError) {
+          errorMessage = 'Sender identity not verified';
+          troubleshooting = [
+            '🔧 SENDGRID SENDER VERIFICATION REQUIRED:',
+            '1. Go to https://app.sendgrid.com/settings/sender_auth',
+            '2. Click "Verify a Single Sender"',
+            '3. Add your email address and verify it',
+            '4. Update SENDGRID_FROM_EMAIL to the verified email',
+            '5. Redeploy your Render service'
+          ];
+        }
+      }
+
+      if (error.code === 401 || error.code === 403) {
+        errorMessage = 'SendGrid API key invalid or unauthorized';
+        troubleshooting = [
+          'Check if SENDGRID_API_KEY is correct',
+          'Verify API key has Full Access permissions',
+          'Generate a new API key if needed'
+        ];
+      }
+
+      return {
+        success: false,
+        message: `SendGrid test failed: ${errorMessage}`,
+        details: {
+          error: error.message,
+          code: error.code,
+          troubleshooting: troubleshooting,
+          timestamp: new Date().toISOString(),
+          platform: 'Render',
+          recommendation: 'Fix SendGrid configuration and try again'
+        }
+      };
+    }
   }
 
   @Post('test-email')
@@ -949,6 +1236,169 @@ export class StaffController {
       }));
     } catch (error) {
       return [];
+    }
+  }
+
+  @Post('test/sendgrid-only')
+  async testSendGridOnly(@Body() body: { email?: string }) {
+    const testEmail = body.email || 'perivihari8@gmail.com';
+    
+    console.log('📧 TESTING SENDGRID FOR RENDER...');
+    console.log(`📧 Test email: ${testEmail}`);
+    
+    const sendGridApiKey = process.env.SENDGRID_API_KEY || this.configService.get('SENDGRID_API_KEY');
+    const sendGridFromEmail = process.env.SENDGRID_FROM_EMAIL || this.configService.get('SENDGRID_FROM_EMAIL');
+    
+    if (!sendGridApiKey || !sendGridFromEmail) {
+      return {
+        success: false,
+        message: 'SendGrid not configured',
+        details: {
+          apiKey: !!sendGridApiKey,
+          fromEmail: sendGridFromEmail || 'NOT SET',
+          instructions: [
+            '🔧 SENDGRID SETUP FOR RENDER:',
+            '1. Sign up at https://app.sendgrid.com (free tier available)',
+            '2. Go to Settings > Sender Authentication',
+            '3. Click "Verify a Single Sender"',
+            '4. Add and verify your email address',
+            '5. Go to Settings > API Keys > Create API Key',
+            '6. Set environment variables in Render:',
+            '   - SENDGRID_API_KEY=SG.your-api-key',
+            '   - SENDGRID_FROM_EMAIL=your-verified@email.com',
+            '7. Redeploy your Render service'
+          ]
+        }
+      };
+    }
+    
+    return this.testSendGridEmail(testEmail, sendGridApiKey, sendGridFromEmail);
+  }
+
+  @Post('test/render-email-comprehensive')
+  async testRenderEmailComprehensive(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'perivihari8@gmail.com';
+      console.log('🧪 RENDER COMPREHENSIVE EMAIL TEST STARTING...');
+      console.log(`📧 Test email: ${testEmail}`);
+      
+      // Import the test service
+      const { RenderEmailTestService } = await import('./render-email-test.service');
+      const testService = new RenderEmailTestService(this.configService);
+      
+      // Run comprehensive test
+      const testResults = await testService.runComprehensiveTest(testEmail);
+      
+      // Get service status
+      const serviceStatus = testService.getEmailServiceStatus();
+      
+      return {
+        message: 'Render comprehensive email test completed',
+        testEmail: testEmail,
+        results: testResults,
+        serviceStatus: serviceStatus,
+        timestamp: new Date().toISOString(),
+        overallStatus: testResults.sendGrid.success || testResults.gmailSMTP.success ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ Comprehensive email test failed:', error);
+      return {
+        message: 'Comprehensive email test failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  @Post('test/render-sendgrid-only')
+  async testRenderSendGridOnly(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'perivihari8@gmail.com';
+      console.log('📧 RENDER SENDGRID TEST...');
+      console.log(`📧 Test email: ${testEmail}`);
+      
+      // Import the test service
+      const { RenderEmailTestService } = await import('./render-email-test.service');
+      const testService = new RenderEmailTestService(this.configService);
+      
+      // Test SendGrid only
+      const sendGridResult = await testService.testSendGridEmail(testEmail);
+      
+      return {
+        message: 'SendGrid test completed',
+        testEmail: testEmail,
+        sendGrid: sendGridResult,
+        timestamp: new Date().toISOString(),
+        status: sendGridResult.success ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ SendGrid test failed:', error);
+      return {
+        message: 'SendGrid test failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  @Post('test/render-gmail-only')
+  async testRenderGmailOnly(@Body() body: { email?: string }) {
+    try {
+      const testEmail = body.email || 'perivihari8@gmail.com';
+      console.log('📧 RENDER GMAIL SMTP TEST...');
+      console.log(`📧 Test email: ${testEmail}`);
+      
+      // Import the test service
+      const { RenderEmailTestService } = await import('./render-email-test.service');
+      const testService = new RenderEmailTestService(this.configService);
+      
+      // Test Gmail SMTP only
+      const gmailResult = await testService.testGmailSMTP(testEmail);
+      
+      return {
+        message: 'Gmail SMTP test completed',
+        testEmail: testEmail,
+        gmailSMTP: gmailResult,
+        timestamp: new Date().toISOString(),
+        status: gmailResult.success ? 'SUCCESS' : 'FAILED'
+      };
+    } catch (error) {
+      console.error('❌ Gmail SMTP test failed:', error);
+      return {
+        message: 'Gmail SMTP test failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        status: 'ERROR'
+      };
+    }
+  }
+
+  @Get('test/email-config-status')
+  async getEmailConfigStatus() {
+    try {
+      console.log('🔍 RENDER EMAIL CONFIG STATUS CHECK...');
+      
+      // Import the test service
+      const { RenderEmailTestService } = await import('./render-email-test.service');
+      const testService = new RenderEmailTestService(this.configService);
+      
+      // Get service status
+      const serviceStatus = testService.getEmailServiceStatus();
+      
+      return {
+        message: 'Email configuration status retrieved',
+        config: serviceStatus,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ Email config status check failed:', error);
+      return {
+        message: 'Email config status check failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
     }
   }
 
