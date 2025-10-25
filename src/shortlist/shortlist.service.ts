@@ -119,13 +119,23 @@ export class ShortlistService {
     this.demoShortlists.push(mockShortlist);
     this.saveShortlists();
 
-    // Auto-sync to Supabase database using unified sync service
-    try {
-      console.log('🚀 [DEPLOYMENT] Auto-syncing shortlist to Supabase:', mockShortlist.name);
-      await this.unifiedSupabaseSync.syncShortlist(mockShortlist);
-      console.log('✅ [DEPLOYMENT] Shortlist synced to Supabase successfully');
-    } catch (error) {
-      console.error('❌ [DEPLOYMENT] Auto-sync to Supabase failed (continuing with local storage):', error);
+    // Auto-sync to Supabase for RENDER & VERCEL deployments
+    const isRenderDeployment = process.env.RENDER === 'true';
+    const isVercelDeployment = process.env.VERCEL === '1';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProduction ? 'PRODUCTION' : 'LOCAL';
+    const shouldSync = isRenderDeployment || isVercelDeployment || isProduction;
+    
+    if (shouldSync) {
+      try {
+        console.log(`🚀 [${deploymentPlatform}] Auto-syncing shortlist to Supabase:`, mockShortlist.name);
+        await this.unifiedSupabaseSync.syncShortlist(mockShortlist);
+        console.log(`✅ [${deploymentPlatform}] Shortlist synced to Supabase successfully`);
+      } catch (error) {
+        console.error(`❌ [${deploymentPlatform}] Auto-sync to Supabase failed (continuing with local storage):`, error);
+      }
+    } else {
+      console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
     }
 
     // Create notification for shortlisting
@@ -322,10 +332,14 @@ export class ShortlistService {
       // Save to file
       this.saveShortlists();
 
-      // Sync to Supabase in background (non-blocking)
-      this.syncShortlistToSupabase(updatedShortlist).catch(error => {
-        console.error('❌ Failed to sync updated shortlist to Supabase:', error);
-      });
+      // Auto-sync to Supabase using unified sync service (non-blocking)
+      try {
+        console.log('🔄 Auto-syncing updated shortlist to Supabase:', updatedShortlist.name);
+        await this.unifiedSupabaseSync.syncShortlist(updatedShortlist);
+        console.log('✅ Updated shortlist synced to Supabase successfully');
+      } catch (error) {
+        console.error('❌ Failed to auto-sync updated shortlist to Supabase:', error);
+      }
 
       console.log('✅ Shortlist updated successfully in demo mode:', updatedShortlist.name);
       return updatedShortlist;
@@ -353,6 +367,20 @@ export class ShortlistService {
       
       // Save to file
       this.saveShortlists();
+
+      // Auto-sync deletion to Supabase (non-blocking)
+      try {
+        console.log('🔄 Auto-syncing shortlist deletion to Supabase:', removedShortlist.name);
+        if (this.supabaseService) {
+          await this.supabaseService.client
+            .from('shortlist')
+            .delete()
+            .eq('id', id);
+          console.log('✅ Shortlist deleted from Supabase successfully');
+        }
+      } catch (error) {
+        console.error('❌ Failed to auto-sync shortlist deletion to Supabase:', error);
+      }
 
       console.log('✅ Shortlist removed successfully from file storage:', removedShortlist.name);
       return { message: 'Shortlist deleted successfully' };

@@ -17,62 +17,117 @@ export class AutoSyncService {
   private initializeAutoSync() {
     const isProduction = this.configService.get('NODE_ENV') === 'production';
     const isRender = this.configService.get('RENDER') === 'true';
+    const isVercel = this.configService.get('VERCEL') === '1';
     
-    // Enable auto-sync in production (Render deployment)
-    this.isEnabled = isProduction && isRender && !!this.supabaseService;
+    // FORCE ENABLE auto-sync for Render/Vercel deployments regardless of NODE_ENV
+    this.isEnabled = (isRender || isVercel || isProduction) && !!this.supabaseService;
     
     this.logger.log('🔄 AUTO-SYNC SERVICE INITIALIZED');
-    this.logger.log(`   - Environment: ${isProduction ? 'Production' : 'Development'}`);
-    this.logger.log(`   - Platform: ${isRender ? 'Render' : 'Local'}`);
+    this.logger.log(`   - NODE_ENV: ${this.configService.get('NODE_ENV') || 'undefined'}`);
+    this.logger.log(`   - RENDER: ${isRender ? 'true' : 'false'}`);
+    this.logger.log(`   - VERCEL: ${isVercel ? 'true' : 'false'}`);
+    this.logger.log(`   - Production: ${isProduction ? 'true' : 'false'}`);
     this.logger.log(`   - Supabase Available: ${!!this.supabaseService}`);
     this.logger.log(`   - Auto-Sync Enabled: ${this.isEnabled ? '✅ YES' : '❌ NO'}`);
     
     if (this.isEnabled) {
-      this.logger.log('🚀 RENDER DEPLOYMENT: Auto-sync to Supabase ACTIVE');
+      const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
+      this.logger.log(`🚀 ${platform} DEPLOYMENT: Auto-sync to Supabase ACTIVE`);
     } else {
       this.logger.log('🏠 LOCAL/DEV: Auto-sync disabled (using local storage)');
+      if (!this.supabaseService) {
+        this.logger.log('❌ Supabase service not available');
+      }
     }
   }
 
   // Enquiry Auto-Sync
   async syncEnquiry(enquiryData: any): Promise<boolean> {
-    if (!this.isEnabled || !this.supabaseService) {
+    // Force sync for Render deployment even if auto-sync appears disabled
+    const isRender = this.configService.get('RENDER') === 'true';
+    const isVercel = this.configService.get('VERCEL') === '1';
+    const shouldForceSync = isRender || isVercel;
+    
+    if (!this.supabaseService) {
+      this.logger.log('❌ Enquiry sync failed: Supabase service not available');
+      return false;
+    }
+    
+    if (!this.isEnabled && !shouldForceSync) {
       this.logger.log('📝 Enquiry sync skipped (auto-sync disabled)');
       return false;
     }
 
     try {
-      this.logger.log(`🔄 Auto-syncing enquiry: ${enquiryData.name}`);
+      const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
+      this.logger.log(`🔄 [${platform}] Force syncing enquiry: ${enquiryData.name}`);
       
-      const { data, error } = await this.supabaseService.client
-        .from('Enquiry')
-        .upsert({
-          id: enquiryData.id,
-          name: enquiryData.name,
-          mobile: enquiryData.mobile,
-          email: enquiryData.email,
-          business_name: enquiryData.businessName,
-          business_type: enquiryData.businessType,
-          loan_amount: enquiryData.loanAmount,
-          source: enquiryData.source || 'ONLINE_APPLICATION',
-          interest_status: enquiryData.interestStatus || 'INTERESTED',
-          staff_id: enquiryData.staffId,
-          assigned_staff: enquiryData.assignedStaff,
-          created_at: enquiryData.createdAt || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        });
+      // Try both table names for compatibility
+      let syncResult = null;
+      
+      // Try 'enquiries' table first (lowercase)
+      try {
+        syncResult = await this.supabaseService.client
+          .from('enquiries')
+          .upsert({
+            id: enquiryData.id,
+            name: enquiryData.name,
+            mobile: enquiryData.mobile,
+            email: enquiryData.email,
+            business_name: enquiryData.businessName,
+            business_type: enquiryData.businessType,
+            loan_amount: enquiryData.loanAmount,
+            source: enquiryData.source || 'ONLINE_APPLICATION',
+            interest_status: enquiryData.interestStatus || 'INTERESTED',
+            staff_id: enquiryData.staffId,
+            assigned_staff: enquiryData.assignedStaff,
+            created_at: enquiryData.createdAt || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'id'
+          });
 
-      if (error) {
-        this.logger.error('❌ Enquiry sync failed:', error.message);
-        return false;
+        if (syncResult.error) {
+          throw new Error(syncResult.error.message);
+        }
+
+        this.logger.log(`✅ [${platform}] Enquiry synced successfully: ${enquiryData.name}`);
+        return true;
+      } catch (tableError) {
+        // Try 'Enquiry' table (capitalized) as fallback
+        this.logger.log(`⚠️ [${platform}] Trying alternative table name...`);
+        
+        const fallbackResult = await this.supabaseService.client
+          .from('Enquiry')
+          .upsert({
+            id: enquiryData.id,
+            name: enquiryData.name,
+            mobile: enquiryData.mobile,
+            email: enquiryData.email,
+            businessName: enquiryData.businessName,
+            businessType: enquiryData.businessType,
+            loanAmount: enquiryData.loanAmount,
+            source: enquiryData.source || 'ONLINE_APPLICATION',
+            interestStatus: enquiryData.interestStatus || 'INTERESTED',
+            staffId: enquiryData.staffId,
+            assignedStaff: enquiryData.assignedStaff,
+            createdAt: enquiryData.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }, {
+            onConflict: 'id'
+          });
+
+        if (fallbackResult.error) {
+          this.logger.error(`❌ [${platform}] Both table attempts failed:`, fallbackResult.error.message);
+          return false;
+        }
+
+        this.logger.log(`✅ [${platform}] Enquiry synced to fallback table: ${enquiryData.name}`);
+        return true;
       }
-
-      this.logger.log(`✅ Enquiry synced successfully: ${enquiryData.name}`);
-      return true;
     } catch (error) {
-      this.logger.error('❌ Enquiry sync error:', error);
+      const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
+      this.logger.error(`❌ [${platform}] Enquiry sync error:`, error);
       return false;
     }
   }

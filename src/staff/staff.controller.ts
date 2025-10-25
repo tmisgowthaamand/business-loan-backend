@@ -829,6 +829,97 @@ export class StaffController {
     return this.staffService.getStaffSyncStatus();
   }
 
+  @Post('test/poorani-email')
+  async testPooraniEmail() {
+    try {
+      console.log('🧪 [RENDER] Testing Poorani email delivery...');
+      
+      // Find Poorani in staff list (ID 8 based on staff service)
+      const pooraniId = 8; // Poorani's ID from staff service
+      const pooraniStaff = await this.staffService.getStaffById(pooraniId);
+      
+      if (!pooraniStaff) {
+        return {
+          success: false,
+          message: 'Poorani not found in staff list',
+          email: 'gowthaamaneswar98@gmail.com',
+          expectedId: pooraniId,
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      console.log('📧 [RENDER] Found Poorani, attempting email delivery...');
+      
+      // Test email delivery
+      const result = await this.staffService.resendVerificationEmail(pooraniStaff.id);
+      
+      return {
+        success: result.emailSent,
+        message: result.emailSent ? 'Email sent successfully to Poorani' : 'Email delivery failed - check logs for details',
+        staff: {
+          id: result.staff.id,
+          name: result.staff.name,
+          email: result.staff.email,
+          status: result.staff.status,
+          role: result.staff.role
+        },
+        emailSent: result.emailSent,
+        timestamp: new Date().toISOString(),
+        renderEnvironment: {
+          isRender: process.env.RENDER === 'true',
+          nodeEnv: process.env.NODE_ENV,
+          sendGridConfigured: !!process.env.SENDGRID_API_KEY,
+          fromEmailConfigured: !!process.env.SENDGRID_FROM_EMAIL
+        }
+      };
+    } catch (error) {
+      console.error('❌ [RENDER] Poorani email test failed:', error);
+      return {
+        success: false,
+        message: 'Poorani email test failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+        renderEnvironment: {
+          isRender: process.env.RENDER === 'true',
+          nodeEnv: process.env.NODE_ENV,
+          sendGridConfigured: !!process.env.SENDGRID_API_KEY,
+          fromEmailConfigured: !!process.env.SENDGRID_FROM_EMAIL
+        }
+      };
+    }
+  }
+
+  @Get('test/render-config')
+  async testRenderConfig() {
+    try {
+      console.log('🔍 [RENDER] Checking environment configuration...');
+      return {
+        message: 'Render Environment Configuration Check',
+        environment: {
+          isRender: process.env.RENDER === 'true',
+          nodeEnv: process.env.NODE_ENV,
+          port: process.env.PORT,
+        },
+        sendGrid: {
+          apiKeyConfigured: !!process.env.SENDGRID_API_KEY,
+          apiKeyPreview: process.env.SENDGRID_API_KEY ? `${process.env.SENDGRID_API_KEY.substring(0, 8)}...` : 'Not set',
+          fromEmailConfigured: !!process.env.SENDGRID_FROM_EMAIL,
+          fromEmail: process.env.SENDGRID_FROM_EMAIL || 'Not set'
+        },
+        gmail: {
+          emailConfigured: !!process.env.GMAIL_EMAIL,
+          email: process.env.GMAIL_EMAIL || 'Not set',
+          passwordConfigured: !!process.env.GMAIL_APP_PASSWORD,
+          passwordPreview: process.env.GMAIL_APP_PASSWORD ? `${process.env.GMAIL_APP_PASSWORD.substring(0, 4)}****` : 'Not set'
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error checking Render config:', error);
+      throw new BadRequestException(`Failed to check config: ${error.message}`);
+    }
+  }
+
   @Get('debug-smtp')
   async debugSmtpConfig() {
     try {

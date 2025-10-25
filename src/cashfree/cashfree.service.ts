@@ -306,10 +306,22 @@ export class CashfreeService {
       console.log('⚠️ Failed to create payment application notification:', error);
     }
 
-    // Auto-sync to Supabase using unified sync service (non-blocking)
-    this.unifiedSupabaseSync.syncPaymentGateway(mockApplication).catch(error => {
-      console.error('❌ [DEPLOYMENT] Failed to sync payment to Supabase:', error);
-    });
+    // Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
+    const isRenderDeployment = process.env.RENDER === 'true';
+    const isVercelDeployment = process.env.VERCEL === '1';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProduction ? 'PRODUCTION' : 'LOCAL';
+    const shouldSync = isRenderDeployment || isVercelDeployment || isProduction;
+    
+    if (shouldSync) {
+      console.log(`🚀 [${deploymentPlatform}] Auto-syncing payment application to Supabase:`, mockApplication.shortlist.name);
+      this.unifiedSupabaseSync.syncPaymentGateway(mockApplication).catch(error => {
+        console.error(`❌ [${deploymentPlatform}] Failed to sync payment to Supabase:`, error);
+      });
+      console.log(`✅ [${deploymentPlatform}] Payment application auto-sync queued`);
+    } else {
+      console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
+    }
 
       return mockApplication;
     } catch (error) {
@@ -368,6 +380,15 @@ export class CashfreeService {
     
     // Save to file
     this.savePayments();
+
+    // Auto-sync to Supabase using unified sync service (non-blocking)
+    try {
+      console.log('🔄 Auto-syncing updated payment application to Supabase:', updated.id);
+      await this.unifiedSupabaseSync.syncPaymentGateway(updated);
+      console.log('✅ Updated payment application synced to Supabase successfully');
+    } catch (error) {
+      console.error('❌ Failed to auto-sync updated payment application to Supabase:', error);
+    }
 
     // Create notification for payment status update
     try {
@@ -540,6 +561,20 @@ export class CashfreeService {
     this.savePayments();
     
     console.log('✅ Removed payment application from demo storage:', removedApplication.shortlist?.name || 'Unknown Client');
+    
+    // Auto-sync deletion to Supabase (non-blocking)
+    try {
+      console.log('🔄 Auto-syncing payment application deletion to Supabase:', removedApplication.id);
+      if (this.supabaseService) {
+        await this.supabaseService.client
+          .from('payment_gateways')
+          .delete()
+          .eq('id', id);
+        console.log('✅ Payment application deleted from Supabase successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to auto-sync payment application deletion to Supabase:', error);
+    }
     
     // Create notification for deletion
     try {

@@ -174,9 +174,27 @@ export class StaffService {
         updatedAt: new Date(),
         lastLogin: new Date(),
       },
+      {
+        id: 8,
+        name: 'Poorani',
+        email: 'gowthaamaneswar98@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Employee',
+        status: StaffStatus.PENDING,
+        hasAccess: false,
+        verified: false,
+        clientName: 'Available for Assignment',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-25T05:41:10.000Z'),
+        updatedAt: new Date(),
+        lastLogin: null,
+      },
     ];
 
-    this.nextId = 8; // Next available ID
+    this.nextId = 9; // Next available ID
     
     this.logger.log(`✅ Initialized with ${this.staff.length} staff members:`);
     this.staff.forEach(staff => {
@@ -597,13 +615,22 @@ export class StaffService {
         this.logger.error('Failed to send notification for new staff member:', error);
       }
 
-      // Auto-sync to Supabase staff table (non-blocking for localhost and Render)
-      if (!isSupabaseUser) {
+      // Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
+      const isRenderDeployment = process.env.RENDER === 'true';
+      const isVercelDeployment = process.env.VERCEL === '1';
+      const isProductionEnv = process.env.NODE_ENV === 'production';
+      const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProductionEnv ? 'PRODUCTION' : 'LOCAL';
+      const shouldSync = isRenderDeployment || isVercelDeployment || isProductionEnv;
+      
+      if (!isSupabaseUser && shouldSync) {
         // Only sync if not already in Supabase (i.e., created in memory)
+        this.logger.log(`🚀 [${deploymentPlatform}] Auto-syncing staff to Supabase: ${createStaffDto.email}`);
         this.syncStaffToSupabase(staffEntity as StaffEntity).catch(error => {
-          this.logger.error(`❌ Failed to auto-sync staff to Supabase: ${createStaffDto.email}`, error);
+          this.logger.error(`❌ [${deploymentPlatform}] Failed to auto-sync staff to Supabase: ${createStaffDto.email}`, error);
         });
-        this.logger.log(`🔄 Auto-sync to Supabase staff table queued for: ${createStaffDto.email}`);
+        this.logger.log(`✅ [${deploymentPlatform}] Staff auto-sync queued: ${createStaffDto.email}`);
+      } else if (!isSupabaseUser) {
+        this.logger.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
       }
 
       this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
@@ -804,6 +831,15 @@ export class StaffService {
 
     staff.updatedAt = new Date();
     this.saveStaffToFile(); // Save to persistent storage
+
+    // Auto-sync to Supabase (non-blocking)
+    try {
+      this.logger.log(`🔄 Auto-syncing updated staff to Supabase: ${staff.email}`);
+      await this.unifiedSupabaseSync.syncStaff(staff);
+      this.logger.log(`✅ Updated staff synced to Supabase successfully: ${staff.email}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to auto-sync updated staff to Supabase: ${staff.email}`, error);
+    }
 
     this.logger.log(`Staff updated: ${staff.email}`);
 

@@ -1045,19 +1045,28 @@ export class DocumentService {
         type: mockDocument.type
       });
 
-      // Auto-sync to Supabase database using unified sync service
-      try {
-        console.log('🚀 [DEPLOYMENT] Auto-syncing document to Supabase database:', mockDocument.id);
-        await this.unifiedSupabaseSync.syncDocument(mockDocument);
-        console.log('✅ [DEPLOYMENT] Document synced to Supabase database successfully');
-        
-        // Update document with Supabase sync status
-        mockDocument.supabaseSynced = true;
-        mockDocument.supabaseSyncedAt = new Date().toISOString();
-      } catch (error) {
-        console.error('❌ [DEPLOYMENT] Auto-sync to Supabase failed (continuing with local storage):', error);
+      // Auto-sync to Supabase database for RENDER & VERCEL deployments
+      const deploymentPlatform = this.isRender ? 'RENDER' : this.isVercel ? 'VERCEL' : this.isProduction ? 'PRODUCTION' : 'LOCAL';
+      const shouldSync = this.isRender || this.isVercel || this.isProduction;
+      
+      if (shouldSync) {
+        try {
+          console.log(`🚀 [${deploymentPlatform}] Auto-syncing document to Supabase:`, mockDocument.id);
+          await this.unifiedSupabaseSync.syncDocument(mockDocument);
+          console.log(`✅ [${deploymentPlatform}] Document synced to Supabase successfully`);
+          
+          // Update document with Supabase sync status
+          mockDocument.supabaseSynced = true;
+          mockDocument.supabaseSyncedAt = new Date().toISOString();
+        } catch (error) {
+          console.error(`❌ [${deploymentPlatform}] Auto-sync to Supabase failed:`, error);
+          mockDocument.supabaseSynced = false;
+          mockDocument.supabaseError = error.message;
+        }
+      } else {
+        console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
         mockDocument.supabaseSynced = false;
-        mockDocument.supabaseError = error.message;
+        mockDocument.supabaseError = 'Development mode - sync disabled';
       }
 
       // Create enhanced notification for document upload
@@ -1468,6 +1477,23 @@ startxref
         this.demoDocuments[documentIndex].verifiedAt = new Date().toISOString();
         this.saveDocuments(); // Persist changes to file
         console.log('📄 Document verification updated in demo storage and saved to file');
+
+        // Auto-sync verification to Supabase (non-blocking)
+        const updatedDocument = this.demoDocuments[documentIndex];
+        try {
+          console.log('🔄 Auto-syncing document verification to Supabase:', updatedDocument.id);
+          await this.unifiedSupabaseSync.syncDocument(updatedDocument);
+          console.log('✅ Document verification synced to Supabase successfully');
+          
+          // Update sync status
+          this.demoDocuments[documentIndex].supabaseSynced = true;
+          this.demoDocuments[documentIndex].supabaseSyncedAt = new Date().toISOString();
+          this.saveDocuments();
+        } catch (error) {
+          console.error('❌ Failed to auto-sync document verification to Supabase:', error);
+          this.demoDocuments[documentIndex].supabaseSynced = false;
+          this.demoDocuments[documentIndex].supabaseError = error.message;
+        }
       }
 
       // Create enhanced notification for document verification

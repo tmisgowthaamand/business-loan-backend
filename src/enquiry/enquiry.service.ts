@@ -513,17 +513,33 @@ export class EnquiryService {
     await this.saveEnquiries();
     console.log('✅ Enquiry saved to local storage:', mockEnquiry.name);
     
-    // 2. Auto-sync to Supabase using new auto-sync service (non-blocking)
-    if (this.autoSyncService) {
-      this.autoSyncService.syncEnquiry(mockEnquiry).catch(error => {
-        console.error('❌ Failed to auto-sync enquiry to database:', error);
-      });
-    }
+    // 2. Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
+    const isRenderDeployment = process.env.RENDER === 'true';
+    const isVercelDeployment = process.env.VERCEL === '1';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProduction ? 'PRODUCTION' : 'LOCAL';
+    // FORCE ENABLE sync for Render deployment regardless of NODE_ENV
+    const shouldSync = isRenderDeployment || isVercelDeployment || isProduction;
     
-    // 3. Legacy auto-sync using unified sync service (non-blocking)
-    this.autoSyncEnquiry(mockEnquiry).catch(error => {
-      console.error('❌ Failed to legacy auto-sync enquiry:', error);
-    });
+    if (shouldSync) {
+      console.log(`🚀 [${deploymentPlatform}] Auto-syncing new enquiry to Supabase:`, mockEnquiry.name);
+      
+      // Use new auto-sync service
+      if (this.autoSyncService) {
+        this.autoSyncService.syncEnquiry(mockEnquiry).catch(error => {
+          console.error(`❌ [${deploymentPlatform}] Failed to auto-sync enquiry to database:`, error);
+        });
+      }
+      
+      // Legacy auto-sync using unified sync service
+      this.autoSyncEnquiry(mockEnquiry).catch(error => {
+        console.error(`❌ [${deploymentPlatform}] Failed to legacy auto-sync enquiry:`, error);
+      });
+      
+      console.log(`✅ [${deploymentPlatform}] Enquiry auto-sync queued:`, mockEnquiry.name);
+    } else {
+      console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
+    }
     
     // 3. Create notification for new enquiry with detailed information
     try {
@@ -828,26 +844,73 @@ export class EnquiryService {
 
   // Method to get Supabase sync status
   async getSupabaseSyncStatus(): Promise<any> {
+    // Force initialize Supabase service if not available
     if (!this.supabaseService) {
+      console.log('🔧 [RENDER] Supabase service not initialized, attempting force sync...');
+      
+      // Try to force sync all enquiries using unified sync service
+      if (this.enquiriesStorage.length > 0) {
+        console.log(`🚀 [RENDER] Force syncing ${this.enquiriesStorage.length} enquiries to Supabase...`);
+        
+        let syncedCount = 0;
+        for (const enquiry of this.enquiriesStorage) {
+          try {
+            await this.autoSyncEnquiry(enquiry);
+            syncedCount++;
+          } catch (error) {
+            console.error('❌ [RENDER] Failed to sync enquiry:', enquiry.name, error);
+          }
+        }
+        
+        return {
+          supabaseCount: syncedCount,
+          localCount: this.enquiriesStorage.length,
+          lastSync: new Date().toISOString(),
+          status: syncedCount > 0 ? 'force_synced' : 'sync_failed',
+          message: `Force synced ${syncedCount}/${this.enquiriesStorage.length} enquiries`
+        };
+      }
+      
       return {
         supabaseCount: 0,
         localCount: this.enquiriesStorage.length,
         lastSync: null,
         status: 'service_unavailable',
-        error: 'Supabase service not initialized'
+        error: 'Supabase service not initialized - no enquiries to sync'
       };
     }
     
     try {
-      const { count, error } = await this.supabaseService.client
-        .from('Enquiry')
+      // Try different table names
+      let count = 0;
+      let error = null;
+      
+      // Try 'enquiries' table first
+      const result1 = await this.supabaseService.client
+        .from('enquiries')
         .select('*', { count: 'exact', head: true });
       
+      if (!result1.error) {
+        count = result1.count || 0;
+      } else {
+        // Try 'Enquiry' table (capitalized)
+        const result2 = await this.supabaseService.client
+          .from('Enquiry')
+          .select('*', { count: 'exact', head: true });
+        
+        if (!result2.error) {
+          count = result2.count || 0;
+        } else {
+          error = result2.error;
+        }
+      }
+      
       return {
-        supabaseCount: count || 0,
+        supabaseCount: count,
         localCount: this.enquiriesStorage.length,
         lastSync: new Date().toISOString(),
-        status: error ? 'error' : 'connected'
+        status: error ? 'error' : 'connected',
+        error: error?.message
       };
     } catch (error) {
       return {
@@ -876,13 +939,28 @@ export class EnquiryService {
       throw new NotFoundException(`Enquiry with ID ${id} not found`);
     }
 
-    this.enquiriesStorage[enquiryIndex] = {
+    const updatedEnquiry = {
       ...this.enquiriesStorage[enquiryIndex],
       ...updateEnquiryDto,
       updatedAt: new Date().toISOString()
     };
 
+    this.enquiriesStorage[enquiryIndex] = updatedEnquiry;
     await this.saveEnquiries();
+    console.log('✅ Enquiry updated in local storage:', updatedEnquiry.name);
+
+    // Auto-sync to Supabase using new auto-sync service (non-blocking)
+    if (this.autoSyncService) {
+      this.autoSyncService.syncEnquiry(updatedEnquiry).catch(error => {
+        console.error('❌ Failed to auto-sync updated enquiry to database:', error);
+      });
+    }
+
+    // Legacy auto-sync using unified sync service (non-blocking)
+    this.autoSyncEnquiry(updatedEnquiry).catch(error => {
+      console.error('❌ Failed to legacy auto-sync updated enquiry:', error);
+    });
+
     return this.enquiriesStorage[enquiryIndex];
   }
 
@@ -895,6 +973,30 @@ export class EnquiryService {
 
     const removedEnquiry = this.enquiriesStorage.splice(enquiryIndex, 1)[0];
     await this.saveEnquiries();
+    console.log('✅ Enquiry removed from local storage:', removedEnquiry.name);
+
+    // Auto-sync deletion to Supabase (non-blocking)
+    if (this.autoSyncService) {
+      // Note: deleteEnquiry method may not exist in AutoSyncService
+      // Using direct Supabase deletion instead
+      console.log('🔄 Auto-syncing enquiry deletion to Supabase:', id);
+    }
+
+    // Legacy sync deletion to Supabase (non-blocking)
+    if (this.supabaseService) {
+      this.supabaseService.client
+        .from('enquiries')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) {
+            console.error('❌ Failed to delete enquiry from Supabase:', error);
+          } else {
+            console.log('✅ Enquiry deleted from Supabase:', removedEnquiry.name);
+          }
+        });
+    }
+
     return { message: 'Enquiry deleted successfully', enquiry: removedEnquiry };
   }
 

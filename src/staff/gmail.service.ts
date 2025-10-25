@@ -230,29 +230,43 @@ export class GmailService {
     
     const accessLink = `${backendUrl}/api/staff/verify-access/${accessToken}`;
 
-    // RENDER DEPLOYMENT: Prioritize SendGrid (SMTP is blocked)
+    // RENDER DEPLOYMENT: Enhanced email delivery with detailed logging
     if (isRender) {
-      this.logger.log(`🌐 RENDER DEPLOYMENT: SMTP blocked - using SendGrid for ${recipientEmail}`);
+      this.logger.log(`🌐 [RENDER] Email delivery for ${recipientName} (${recipientEmail})`);
+      this.logger.log(`🔧 [RENDER] Environment check:`);
+      this.logger.log(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'Missing'}`);
+      this.logger.log(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'Not set'}`);
+      this.logger.log(`   - SendGrid Initialized: ${this.sendGridInitialized}`);
       
-      // Try SendGrid first
+      // Try SendGrid first with enhanced logging
       if (this.sendGridInitialized) {
+        this.logger.log(`📧 [RENDER] Attempting SendGrid delivery to ${recipientEmail}`);
         const sendGridSuccess = await this.sendViaSendGrid(recipientEmail, recipientName, accessLink, role);
         if (sendGridSuccess) {
-          this.logger.log(`✅ RENDER: SendGrid email sent successfully to ${recipientEmail}`);
+          this.logger.log(`✅ [RENDER] SendGrid SUCCESS: Email sent to ${recipientEmail}`);
           return true;
         }
-        this.logger.warn('⚠️ RENDER: SendGrid failed, trying webhook...');
+        this.logger.error(`❌ [RENDER] SendGrid FAILED for ${recipientEmail}`);
+      } else {
+        this.logger.error(`❌ [RENDER] SendGrid NOT INITIALIZED - cannot send to ${recipientEmail}`);
+        this.logger.error(`🔧 [RENDER] SendGrid setup required:`);
+        this.logger.error(`   1. Add SENDGRID_API_KEY to Render environment`);
+        this.logger.error(`   2. Add SENDGRID_FROM_EMAIL to Render environment`);
+        this.logger.error(`   3. Verify sender email in SendGrid dashboard`);
       }
       
-      // Try webhook as backup
+      // Try webhook as backup with enhanced logging
+      this.logger.log(`📧 [RENDER] Attempting webhook delivery to ${recipientEmail}`);
       const webhookSuccess = await this.sendViaWebhook(recipientEmail, recipientName, accessLink, role);
       if (webhookSuccess) {
-        this.logger.log(`✅ RENDER: Webhook email sent successfully to ${recipientEmail}`);
+        this.logger.log(`✅ [RENDER] Webhook SUCCESS: Email sent to ${recipientEmail}`);
         return true;
       }
+      this.logger.error(`❌ [RENDER] Webhook FAILED for ${recipientEmail}`);
       
-      // Final fallback: Demo mode with manual instructions
-      this.logger.warn('⚠️ RENDER: All email methods failed - using demo mode');
+      // Final fallback: Demo mode with detailed instructions
+      this.logger.warn(`⚠️ [RENDER] All email methods FAILED for ${recipientEmail}`);
+      this.logger.warn(`📋 [RENDER] Using demo mode - email will be logged only`);
       return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
     }
 
@@ -350,22 +364,32 @@ export class GmailService {
         })
       };
 
-      this.logger.log(`📧 Sending via SendGrid to ${recipientEmail} (from: ${fromEmail})`);
-      this.logger.log(`📧 SendGrid API Key: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'Missing'}`);
+      this.logger.log(`📧 [SENDGRID] Sending to ${recipientEmail} (from: ${fromEmail})`);
+      this.logger.log(`📧 [SENDGRID] API Key: ${this.config.get('SENDGRID_API_KEY') ? 'Present ✅' : 'Missing ❌'}`);
+      this.logger.log(`📧 [SENDGRID] Message details:`);
+      this.logger.log(`   - To: ${recipientEmail}`);
+      this.logger.log(`   - From: ${fromEmail}`);
+      this.logger.log(`   - Subject: ${msg.subject}`);
       
       const result = await sgMail.send(msg);
       
-      this.logger.log(`✅ SendGrid email sent successfully to ${recipientEmail}`);
-      this.logger.log(`📧 SendGrid Response: ${JSON.stringify(result[0]?.statusCode || 'No status')}`);
+      this.logger.log(`✅ [SENDGRID] SUCCESS: Email sent to ${recipientEmail}`);
+      this.logger.log(`📧 [SENDGRID] Response status: ${result[0]?.statusCode || 'Unknown'}`);
+      this.logger.log(`📧 [SENDGRID] Message ID: ${result[0]?.headers?.['x-message-id'] || 'Not provided'}`);
       return true;
     } catch (error) {
-      this.logger.error(`❌ SendGrid failed for ${recipientEmail}:`, error.message);
+      this.logger.error(`❌ [SENDGRID] FAILED for ${recipientEmail}:`, error.message);
       
-      // Enhanced error logging for debugging
+      // Enhanced error logging for Render debugging
+      this.logger.error(`🔍 [SENDGRID] Error details for ${recipientEmail}:`);
+      this.logger.error(`   - Error type: ${error.constructor.name}`);
+      this.logger.error(`   - Error code: ${error.code || 'Not provided'}`);
+      this.logger.error(`   - HTTP status: ${error.response?.status || 'Not provided'}`);
+      
       if (error.response?.body?.errors) {
-        this.logger.error('📧 SendGrid API errors:', JSON.stringify(error.response.body.errors, null, 2));
+        this.logger.error('📧 [SENDGRID] API errors:', JSON.stringify(error.response.body.errors, null, 2));
         
-        // Check for sender identity verification error
+        // Check for specific error types
         const errors = error.response.body.errors;
         const senderIdentityError = errors.find(err => 
           err.message?.includes('verified Sender Identity') || 
@@ -373,21 +397,32 @@ export class GmailService {
         );
         
         if (senderIdentityError) {
-          this.logger.error('🚨 SENDGRID SENDER IDENTITY ERROR DETECTED!');
-          this.logger.error('📧 SOLUTION STEPS:');
+          this.logger.error('🚨 [SENDGRID] SENDER IDENTITY ERROR for Poorani!');
+          this.logger.error('📧 [RENDER] IMMEDIATE ACTION REQUIRED:');
           this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
-          this.logger.error('   2. Add and verify your sender email address');
-          this.logger.error('   3. Set SENDGRID_FROM_EMAIL environment variable to the verified email');
-          this.logger.error('   4. Redeploy your application');
+          this.logger.error('   2. Verify sender email: gokrishna98@gmail.com');
+          this.logger.error('   3. Update Render environment: SENDGRID_FROM_EMAIL=gokrishna98@gmail.com');
+          this.logger.error('   4. Redeploy Render service');
           this.logger.error(`   Current from email: ${this.config.get('SENDGRID_FROM_EMAIL') || 'NOT SET'}`);
         }
+        
+        // Check for API key issues
+        const apiKeyError = errors.find(err => 
+          err.message?.includes('API key') || 
+          err.message?.includes('Unauthorized')
+        );
+        
+        if (apiKeyError) {
+          this.logger.error('🔑 [SENDGRID] API KEY ERROR for Poorani!');
+          this.logger.error('📧 [RENDER] Check SendGrid API key in environment variables');
+        }
       }
-      if (error.response?.status) {
-        this.logger.error(`📧 SendGrid HTTP Status: ${error.response.status}`);
-      }
-      if (error.code) {
-        this.logger.error(`📧 SendGrid Error Code: ${error.code}`);
-      }
+      
+      // Log current environment for debugging
+      this.logger.error(`🔧 [RENDER] Current email config:`);
+      this.logger.error(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
+      this.logger.error(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING'}`);
+      this.logger.error(`   - RENDER env: ${process.env.RENDER}`);
       
       return false;
     }
@@ -572,15 +607,15 @@ export class GmailService {
     try {
       this.logger.log(`📧 DEMO EMAIL MODE (${platform}): Email delivery simulation`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 ⚠️ MANUAL EMAIL REQUIRED ⚠️`);
-      this.logger.log(`📧 Please manually send the following email:`);
+      this.logger.log(`📧 🚨 POORANI EMAIL DELIVERY FAILED - MANUAL ACTION REQUIRED 🚨`);
+      this.logger.log(`📧 Please manually send the following email to Poorani:`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 TO: ${recipientEmail}`);
+      this.logger.log(`📧 TO: ${recipientEmail} (Poorani)`);
       this.logger.log(`📧 NAME: ${recipientName}`);
       this.logger.log(`📧 ROLE: ${role}`);
       this.logger.log(`📧 SUBJECT: Welcome to Business Loan Management System - ${role} Access`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 🔗 VERIFICATION LINK (COPY THIS):`);
+      this.logger.log(`📧 🔗 VERIFICATION LINK FOR POORANI (COPY THIS):`);
       this.logger.log(`📧 ${accessLink}`);
       this.logger.log(`📧 ===============================================`);
       this.logger.log(`📧 📝 EMAIL TEMPLATE:`);
