@@ -1802,4 +1802,71 @@ export class StaffController {
     }
   }
 
+  // Test staff sync to Supabase for Render deployment
+  @Post('test-supabase-sync/:id')
+  async testStaffSupabaseSync(@Param('id') staffId: string) {
+    try {
+      console.log(`🚀 [RENDER] Testing Supabase sync for staff ID: ${staffId}`);
+      
+      const staffData = await this.staffService.getStaffById(parseInt(staffId));
+      if (!staffData) {
+        throw new BadRequestException(`Staff member with ID ${staffId} not found`);
+      }
+      
+      // Get the full staff entity for sync (including password)
+      const allStaff = await this.staffService.getAllStaff();
+      const fullStaff = allStaff.find(s => s.id === parseInt(staffId));
+      
+      if (!fullStaff) {
+        throw new BadRequestException(`Full staff data not found for ID ${staffId}`);
+      }
+      
+      // Force sync to Supabase using internal method
+      await this.staffService.syncStaffToSupabaseWithRetry(fullStaff as any, 3);
+      
+      console.log(`✅ [RENDER] Staff sync test completed for: ${staffData.email}`);
+      
+      return {
+        success: true,
+        message: `Staff ${staffData.name} synced to Supabase successfully`,
+        staff: {
+          id: staffData.id,
+          name: staffData.name,
+          email: staffData.email,
+          role: staffData.role,
+          hasAccess: staffData.hasAccess,
+          verified: staffData.verified
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error(`❌ [RENDER] Staff sync test failed:`, error);
+      throw new BadRequestException(`Staff sync test failed: ${error.message}`);
+    }
+  }
+
+  // Grant access to all staff for Render deployment
+  @Post('grant-access-all')
+  async grantAccessToAllStaff() {
+    try {
+      console.log('🚀 [RENDER] Granting access to all staff for immediate login...');
+      
+      const result = await this.staffService.grantAccessToAllStaff();
+      
+      console.log(`✅ [RENDER] Access granted to ${result.updated} staff members`);
+      
+      return {
+        success: true,
+        message: `Access granted to ${result.updated} staff members`,
+        updated: result.updated,
+        staff: result.staff,
+        timestamp: new Date().toISOString(),
+        platform: process.env.RENDER === 'true' ? 'Render' : 'Local'
+      };
+    } catch (error) {
+      console.error('❌ [RENDER] Failed to grant access to all staff:', error);
+      throw new BadRequestException(`Failed to grant access: ${error.message}`);
+    }
+  }
+
 }

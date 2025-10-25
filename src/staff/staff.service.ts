@@ -216,6 +216,22 @@ export class StaffService {
     
     // Save to file
     this.saveStaffToFile();
+    
+    // Grant access to all staff for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isRender || isProduction) {
+      // Use setTimeout to make this non-blocking
+      setTimeout(async () => {
+        try {
+          const result = await this.grantAccessToAllStaff();
+          this.logger.log(`🚀 [RENDER] Initialization complete: ${result.updated} staff granted access`);
+        } catch (error) {
+          this.logger.warn(`⚠️ [RENDER] Could not grant access during initialization: ${error.message}`);
+        }
+      }, 100);
+    }
   }
 
   private generateAccessToken(): string {
@@ -497,14 +513,14 @@ export class StaffService {
           id: staffId,
           name: createStaffDto.name,
           email: createStaffDto.email,
-          password: hashedPassword,
+          password: createStaffDto.password, // Store plain text password for immediate login capability
           role: createStaffDto.role,
           department: createStaffDto.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
           position: createStaffDto.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
-          status: StaffStatus.PENDING,
-          hasAccess: false,
-          verified: false,
-          clientName: createStaffDto.clientName,
+          status: StaffStatus.ACTIVE, // Set to ACTIVE so they can login immediately
+          hasAccess: true, // Grant access immediately for Render deployment
+          verified: true, // Set as verified for immediate login
+          clientName: createStaffDto.clientName || 'Available for Assignment',
           accessToken,
           accessTokenExpiry,
           createdAt: new Date(),
@@ -515,10 +531,23 @@ export class StaffService {
         this.staff.push(newStaff);
         this.saveStaffToFile(); // Save to persistent storage
         
-        // Auto-sync to Supabase using unified sync service (non-blocking)
-        this.unifiedSupabaseSync.syncStaff(newStaff).catch(error => {
-          this.logger.error('❌ [DEPLOYMENT] Failed to sync staff to Supabase:', error);
-        });
+        // Force sync to Supabase for Render deployment (with retry)
+        const isRender = process.env.RENDER === 'true';
+        const isProduction = process.env.NODE_ENV === 'production';
+        
+        if (isRender || isProduction) {
+          this.logger.log(`🚀 [RENDER] Force syncing new staff to Supabase: ${newStaff.email}`);
+          
+          // Try multiple sync attempts for Render deployment
+          this.syncStaffToSupabaseWithRetry(newStaff, 3).catch(error => {
+            this.logger.warn(`⚠️ [RENDER] Failed to sync staff to Supabase after retries: ${error.message}`);
+          });
+        } else {
+          // Regular sync for local development
+          this.unifiedSupabaseSync.syncStaff(newStaff).catch(error => {
+            this.logger.error('❌ [LOCAL] Failed to sync staff to Supabase:', error);
+          });
+        }
         
         const { password, ...staffWithoutPassword } = newStaff;
         staffEntity = staffWithoutPassword;
@@ -1992,6 +2021,78 @@ export class StaffService {
       }
     } catch (error) {
       this.logger.error('Error updating staff assignment:', error);
+    }
+  }
+
+  // Grant immediate access to all existing staff (for Render deployment)
+  async grantAccessToAllStaff(): Promise<{ updated: number; staff: string[] }> {
+    try {
+      this.logger.log('🚀 [RENDER] Granting access to all existing staff for immediate login...');
+      
+      let updatedCount = 0;
+      const updatedStaff: string[] = [];
+      
+      for (const staff of this.staff) {
+        if (!staff.hasAccess || !staff.verified || staff.status !== StaffStatus.ACTIVE) {
+          staff.hasAccess = true;
+          staff.verified = true;
+          staff.status = StaffStatus.ACTIVE;
+          staff.updatedAt = new Date();
+          
+          updatedCount++;
+          updatedStaff.push(staff.email);
+          
+          this.logger.log(`✅ [RENDER] Granted access to: ${staff.email} (${staff.role})`);
+        }
+      }
+      
+      if (updatedCount > 0) {
+        this.saveStaffToFile();
+        this.logger.log(`✅ [RENDER] Updated ${updatedCount} staff members for immediate login access`);
+      } else {
+        this.logger.log('📝 [RENDER] All staff already have access - no updates needed');
+      }
+      
+      return {
+        updated: updatedCount,
+        staff: updatedStaff
+      };
+    } catch (error) {
+      this.logger.error('❌ [RENDER] Error granting access to staff:', error);
+      throw error;
+    }
+  }
+
+  // Retry mechanism for Supabase sync in Render deployment
+  async syncStaffToSupabaseWithRetry(staff: StaffEntity, maxRetries: number = 3): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.logger.log(`🔄 [RENDER] Supabase sync attempt ${attempt}/${maxRetries} for staff: ${staff.email}`);
+        
+        // Use the unified sync service with timeout
+        const syncPromise = this.unifiedSupabaseSync.syncStaff(staff);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Sync timeout')), 10000); // 10 second timeout
+        });
+        
+        await Promise.race([syncPromise, timeoutPromise]);
+        
+        this.logger.log(`✅ [RENDER] Staff synced to Supabase successfully on attempt ${attempt}: ${staff.email}`);
+        return; // Success, exit retry loop
+        
+      } catch (error) {
+        this.logger.warn(`⚠️ [RENDER] Sync attempt ${attempt} failed for ${staff.email}: ${error.message}`);
+        
+        if (attempt === maxRetries) {
+          this.logger.error(`❌ [RENDER] All sync attempts failed for ${staff.email}. Staff will work locally but may not appear in Supabase.`);
+          throw error;
+        }
+        
+        // Wait before retry (exponential backoff)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        this.logger.log(`⏳ [RENDER] Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 }

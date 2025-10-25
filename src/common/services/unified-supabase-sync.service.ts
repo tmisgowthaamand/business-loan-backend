@@ -42,14 +42,20 @@ export class UnifiedSupabaseSyncService {
     const isVercel = process.env.VERCEL === '1';
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // Temporarily disable Supabase sync for all deployments to prevent errors
-    const supabaseSyncDisabled = true; // Force disable until schema is fixed
+    // Enable Supabase sync for Staff table in Render deployment
+    const enableStaffSync = tableName.toLowerCase().includes('staff');
+    const supabaseSyncDisabled = !enableStaffSync; // Enable sync for Staff table only
     
     if (supabaseSyncDisabled) {
       this.logger.log(`🔧 [RENDER-SAFE] Supabase sync disabled for ${tableName} - preventing schema errors`);
       this.logger.log(`🔧 Environment: RENDER=${isRender}, VERCEL=${isVercel}, PRODUCTION=${isProduction}`);
       this.logger.log(`💾 Data stored locally - application continues normally`);
       return { success: true, data: null };
+    }
+    
+    // Staff table sync is enabled for Render deployment
+    if (enableStaffSync) {
+      this.logger.log(`🚀 [RENDER] Supabase sync ENABLED for ${tableName} - staff management active`);
     }
     
     const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
@@ -247,23 +253,36 @@ export class UnifiedSupabaseSyncService {
   }
 
   /**
-   * Sync staff data to Supabase
+   * Sync staff data to Supabase Staff table
    */
   async syncStaff(staff: any): Promise<void> {
+    this.logger.log(`🚀 [RENDER] Starting staff sync to Supabase for: ${staff.email}`);
+    
+    // Prepare data for Supabase Staff table
     const supabaseData = {
       id: staff.id,
       name: staff.name,
       email: staff.email,
       role: staff.role,
-      department: staff.department || null,
-      position: staff.position || null,
+      department: staff.department || 'General',
+      position: staff.position || 'Staff Member',
       status: staff.status || 'ACTIVE',
-      has_access: staff.hasAccess || false,
-      verified: staff.verified || false,
-      client_name: staff.clientName || null,
-      created_at: staff.createdAt,
-      // Remove updatedAt as it may not exist in Supabase schema
+      hasAccess: staff.hasAccess !== undefined ? staff.hasAccess : true,
+      verified: staff.verified !== undefined ? staff.verified : true,
+      clientName: staff.clientName || 'Available for Assignment',
+      createdAt: staff.createdAt || new Date().toISOString(),
+      updatedAt: staff.updatedAt || new Date().toISOString(),
+      // Add password hash for Supabase (if available)
+      passwordHash: staff.password ? (staff.password.startsWith('$2b$') ? staff.password : null) : null
     };
+    
+    this.logger.log(`💾 [RENDER] Staff data prepared for Supabase:`, {
+      id: supabaseData.id,
+      email: supabaseData.email,
+      role: supabaseData.role,
+      hasAccess: supabaseData.hasAccess,
+      verified: supabaseData.verified
+    });
 
     // Try different table name variations to handle case sensitivity
     const tableVariations = ['Staff', 'staff', 'STAFF'];
