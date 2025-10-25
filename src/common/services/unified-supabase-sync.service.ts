@@ -32,17 +32,22 @@ export class UnifiedSupabaseSyncService {
     skipDuplicateCheck?: boolean;
     upsert?: boolean;
   } = {}): Promise<{ success: boolean; data?: any; error?: any }> {
-    // Only sync in actual production deployments
+    // Force enable sync for Render and Vercel deployments regardless of NODE_ENV
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
     const isProduction = process.env.NODE_ENV === 'production';
-    const isRenderProduction = process.env.RENDER === 'true' && isProduction;
-    const isVercelProduction = process.env.VERCEL === '1' && isProduction;
+    const shouldSync = isRender || isVercel || isProduction;
     
-    // Skip sync in development or local environments
-    if (!isProduction || (!isRenderProduction && !isVercelProduction)) {
-      this.logger.log(`🔧 [DEV] Skipping Supabase sync for ${tableName} - not in production deployment`);
+    // Skip sync only in pure local development
+    if (!shouldSync) {
+      this.logger.log(`🔧 [LOCAL] Skipping Supabase sync for ${tableName} - local development mode`);
       this.logger.log(`🔧 Environment: NODE_ENV=${process.env.NODE_ENV}, RENDER=${process.env.RENDER}, VERCEL=${process.env.VERCEL}`);
       return { success: true, data: null };
     }
+    
+    const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
+    this.logger.log(`🚀 [${platform}] Force enabling Supabase sync for ${tableName}`);
+    
     
     try {
       this.logger.log(`🔄 [DEPLOYMENT] Auto-syncing to Supabase table: ${tableName}`);
@@ -111,24 +116,20 @@ export class UnifiedSupabaseSyncService {
    * Sync enquiry data to Supabase
    */
   async syncEnquiry(enquiry: any): Promise<void> {
+    // Only include columns that exist in Supabase schema
     const supabaseData = {
       id: enquiry.id,
-      date: enquiry.createdAt,
       name: enquiry.name,
       businessName: enquiry.businessName || enquiry.businessType || null,
-      ownerName: enquiry.name,
       mobile: enquiry.mobile,
       email: enquiry.email || null,
       businessType: enquiry.businessType || 'General Business',
       loanAmount: enquiry.loanAmount || null,
-      source: enquiry.source || 'WEBSITE',
-      interestStatus: enquiry.interestStatus || 'INTERESTED',
-      staffId: enquiry.staffId || 1,
-      assignedStaff: enquiry.staff?.name || 'Auto-Assigned',
-      createdAt: enquiry.createdAt,
-      updatedAt: enquiry.updatedAt
+      createdAt: enquiry.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
+    this.logger.log(`🔄 [RENDER] Syncing enquiry with safe schema: ${enquiry.name}`);
     await this.syncToTable('Enquiry', supabaseData, { uniqueField: 'mobile' });
   }
 

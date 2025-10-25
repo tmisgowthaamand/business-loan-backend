@@ -65,7 +65,7 @@ export class AutoSyncService {
       // Try both table names for compatibility
       let syncResult = null;
       
-      // Try 'enquiries' table first (lowercase)
+      // Try 'enquiries' table first (lowercase) - minimal columns only
       try {
         syncResult = await this.supabaseService.client
           .from('enquiries')
@@ -77,10 +77,6 @@ export class AutoSyncService {
             business_name: enquiryData.businessName,
             business_type: enquiryData.businessType,
             loan_amount: enquiryData.loanAmount,
-            source: enquiryData.source || 'ONLINE_APPLICATION',
-            interest_status: enquiryData.interestStatus || 'INTERESTED',
-            staff_id: enquiryData.staffId,
-            assigned_staff: enquiryData.assignedStaff,
             created_at: enquiryData.createdAt || new Date().toISOString(),
             updated_at: new Date().toISOString()
           }, {
@@ -107,10 +103,6 @@ export class AutoSyncService {
             businessName: enquiryData.businessName,
             businessType: enquiryData.businessType,
             loanAmount: enquiryData.loanAmount,
-            source: enquiryData.source || 'ONLINE_APPLICATION',
-            interestStatus: enquiryData.interestStatus || 'INTERESTED',
-            staffId: enquiryData.staffId,
-            assignedStaff: enquiryData.assignedStaff,
             createdAt: enquiryData.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }, {
