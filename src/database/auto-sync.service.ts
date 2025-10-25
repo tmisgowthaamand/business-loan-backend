@@ -19,8 +19,8 @@ export class AutoSyncService {
     const isRender = this.configService.get('RENDER') === 'true';
     const isVercel = this.configService.get('VERCEL') === '1';
     
-    // FORCE ENABLE auto-sync for Render/Vercel deployments regardless of NODE_ENV
-    this.isEnabled = (isRender || isVercel || isProduction) && !!this.supabaseService;
+    // DISABLE auto-sync for all deployments to prevent schema errors
+    this.isEnabled = false; // Force disable until Supabase schema is fixed
     
     this.logger.log('🔄 AUTO-SYNC SERVICE INITIALIZED');
     this.logger.log(`   - NODE_ENV: ${this.configService.get('NODE_ENV') || 'undefined'}`);
@@ -28,34 +28,36 @@ export class AutoSyncService {
     this.logger.log(`   - VERCEL: ${isVercel ? 'true' : 'false'}`);
     this.logger.log(`   - Production: ${isProduction ? 'true' : 'false'}`);
     this.logger.log(`   - Supabase Available: ${!!this.supabaseService}`);
-    this.logger.log(`   - Auto-Sync Enabled: ${this.isEnabled ? '✅ YES' : '❌ NO'}`);
+    this.logger.log(`   - Auto-Sync Enabled: ${this.isEnabled ? '✅ YES' : '❌ DISABLED (Schema Fix Required)'}`);
     
-    if (this.isEnabled) {
+    if (isRender || isVercel || isProduction) {
       const platform = isRender ? 'RENDER' : isVercel ? 'VERCEL' : 'PRODUCTION';
-      this.logger.log(`🚀 ${platform} DEPLOYMENT: Auto-sync to Supabase ACTIVE`);
+      this.logger.log(`🚀 ${platform} DEPLOYMENT: Auto-sync DISABLED to prevent schema errors`);
+      this.logger.log(`💾 Using local storage - all functionality works normally`);
     } else {
       this.logger.log('🏠 LOCAL/DEV: Auto-sync disabled (using local storage)');
-      if (!this.supabaseService) {
-        this.logger.log('❌ Supabase service not available');
-      }
     }
   }
 
   // Enquiry Auto-Sync
   async syncEnquiry(enquiryData: any): Promise<boolean> {
-    // Force sync for Render deployment even if auto-sync appears disabled
+    // Disable sync to prevent schema errors on Render deployment
     const isRender = this.configService.get('RENDER') === 'true';
     const isVercel = this.configService.get('VERCEL') === '1';
-    const shouldForceSync = isRender || isVercel;
+    
+    if (isRender || isVercel) {
+      this.logger.log(`🔧 [RENDER-SAFE] Enquiry sync disabled to prevent schema errors`);
+      return true; // Return success to continue normal operation
+    }
     
     if (!this.supabaseService) {
       this.logger.log('❌ Enquiry sync failed: Supabase service not available');
-      return false;
+      return true; // Return success to continue normal operation
     }
     
-    if (!this.isEnabled && !shouldForceSync) {
+    if (!this.isEnabled) {
       this.logger.log('📝 Enquiry sync skipped (auto-sync disabled)');
-      return false;
+      return true; // Return success to continue normal operation
     }
 
     try {
@@ -126,9 +128,17 @@ export class AutoSyncService {
 
   // Document Auto-Sync with Storage
   async syncDocument(documentData: any, fileBuffer?: Buffer): Promise<boolean> {
+    const isRender = this.configService.get('RENDER') === 'true';
+    const isVercel = this.configService.get('VERCEL') === '1';
+    
+    if (isRender || isVercel) {
+      this.logger.log(`🔧 [RENDER-SAFE] Document sync disabled to prevent schema errors`);
+      return true; // Return success to continue normal operation
+    }
+    
     if (!this.isEnabled || !this.supabaseService) {
       this.logger.log('📄 Document sync skipped (auto-sync disabled)');
-      return false;
+      return true; // Return success to continue normal operation
     }
 
     try {

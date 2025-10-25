@@ -4,7 +4,7 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm ci && npm run build && npm run render:seed
+    buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     healthCheckPath: /api/staff/health
     autoDeploy: true
@@ -15,6 +15,9 @@ services:
         value: true
       - key: PORT
         value: 5002
+      # Disable Supabase sync to prevent schema errors
+      - key: DISABLE_SUPABASE_SYNC
+        value: true
       # SendGrid Configuration (Primary Email Service)
       # IMPORTANT: Replace with your actual SendGrid API key from https://app.sendgrid.com/settings/api_keys
       - key: SENDGRID_API_KEY
