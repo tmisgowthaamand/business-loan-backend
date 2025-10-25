@@ -749,7 +749,7 @@ export class EnquiryService {
       3: { id: 3, name: 'Harish', email: 'newacttmis@gmail.com', clientName: 'Harish' },
       4: { id: 4, name: 'Pankil', email: 'govindamarketing9998@gmail.com', clientName: 'Pankil' },
       5: { id: 5, name: 'Dinesh', email: 'dinesh@gmail.com', clientName: 'Dinesh' },
-      6: { id: 6, name: 'Nanciya', email: 'tmsnunciya59@gmail.com', clientName: 'Nanciya' },
+      6: { id: 6, name: 'Nunciya', email: 'tmsnunciya59@gmail.com', clientName: 'Nunciya' },
       7: { id: 7, name: 'Admin User', email: 'admin@gmail.com', clientName: 'Admin User' }
     };
 

@@ -298,11 +298,11 @@ export class NotificationsService {
           clientName: 'Vikram Singh',
           currentStatus: 'PAYMENT_APPLIED',
           previousStatus: 'SHORTLISTED',
-          assignedStaff: 'Nanciya',
+          assignedStaff: 'Nunciya',
           loanAmount: 600000,
           businessType: 'Automotive',
           mobile: '9876543214',
-          updatedBy: 'Nanciya',
+          updatedBy: 'Nunciya',
           dateTime: {
             date: currentDate,
             time: currentTime,
@@ -312,7 +312,7 @@ export class NotificationsService {
           statusHistory: [{
             status: 'PAYMENT_APPLIED',
             timestamp: new Date(Date.now() - 1800000).toISOString(),
-            updatedBy: 'Nanciya',
+            updatedBy: 'Nunciya',
             notes: 'Payment gateway application submitted - processing payment'
           }]
         }

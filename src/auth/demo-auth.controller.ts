@@ -18,7 +18,7 @@ export class DemoAuthController {
         { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
         { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
         { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
-        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nunciya', id: 6 },
         { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
@@ -83,7 +83,7 @@ export class DemoAuthController {
         { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
         { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
         { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
-        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nunciya', id: 6 },
         { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
@@ -143,7 +143,7 @@ export class DemoAuthController {
         { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
         { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
         { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
-        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nunciya', id: 6 },
         { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 
@@ -208,7 +208,7 @@ export class DemoAuthController {
         { email: 'newacttmis@gmail.com', password: '12345678', role: 'ADMIN', name: 'Harish', id: 3 },
         { email: 'govindamarketing9998@gmail.com', password: '12345678', role: 'ADMIN', name: 'Pankil', id: 4 },
         { email: 'dinesh@gmail.com', password: '12345678', role: 'EMPLOYEE', name: 'Dinesh', id: 5 },
-        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nanciya', id: 6 },
+        { email: 'tmsnunciya59@gmail.com', password: '12345678', role: 'ADMIN', name: 'Nunciya', id: 6 },
         { email: 'admin@gmail.com', password: 'admin123', role: 'ADMIN', name: 'Admin User', id: 7 }
       ];
 

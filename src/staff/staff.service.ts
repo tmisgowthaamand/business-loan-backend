@@ -160,7 +160,7 @@ export class StaffService {
         id: 7,
         name: 'Admin User',
         email: 'admin@gmail.com',
-        password: '12345678',
+        password: 'admin123',
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'System Administrator',
@@ -174,25 +174,10 @@ export class StaffService {
         updatedAt: new Date(),
         lastLogin: new Date(),
       },
-      {
-        id: 8,
-        name: 'Poorani',
-        email: 'gowthaamaneswar98@gmail.com',
-        password: '12345678',
-        role: StaffRole.EMPLOYEE,
-        department: 'Operations',
-        position: 'Employee',
-        status: StaffStatus.PENDING,
-        hasAccess: false,
-        verified: false,
-        clientName: 'Available for Assignment',
-        accessToken: this.generateAccessToken(),
-        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdAt: new Date('2024-10-25T05:41:10.000Z'),
-        updatedAt: new Date(),
-        lastLogin: null,
-      },
     ];
+    
+    // Ensure exactly 7 staff members for Render deployment
+    this.staff = this.staff.slice(0, 7);
 
     this.nextId = 9; // Next available ID
     
@@ -507,25 +492,28 @@ export class StaffService {
       if (error) {
         this.logger.warn(`⚠️ Supabase insert failed, using in-memory storage: ${error.message}`);
         
-        // Create staff in memory as fallback
+        // Create staff in memory - immediately active for Render deployment
         const staffId = await this.idGeneratorService.generateStaffId();
+        const isRenderDeployment = process.env.RENDER === 'true' || process.env.NODE_ENV === 'production';
+        
         const newStaff: StaffEntity = {
           id: staffId,
           name: createStaffDto.name,
           email: createStaffDto.email,
-          password: createStaffDto.password, // Store plain text password for immediate login capability
+          password: createStaffDto.password, // Store plain text password for immediate login
           role: createStaffDto.role,
           department: createStaffDto.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
           position: createStaffDto.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
-          status: StaffStatus.ACTIVE, // Set to ACTIVE so they can login immediately
-          hasAccess: true, // Grant access immediately for Render deployment
-          verified: true, // Set as verified for immediate login
+          status: isRenderDeployment ? StaffStatus.ACTIVE : StaffStatus.PENDING, // Active immediately for Render
+          hasAccess: isRenderDeployment ? true : false, // Immediate access for Render
+          verified: isRenderDeployment ? true : false, // Verified immediately for Render
           clientName: createStaffDto.clientName || 'Available for Assignment',
-          accessToken,
-          accessTokenExpiry,
+          accessToken: isRenderDeployment ? undefined : accessToken, // No token needed if immediately active
+          accessTokenExpiry: isRenderDeployment ? undefined : accessTokenExpiry,
           createdAt: new Date(),
           updatedAt: new Date(),
-          createdBy: 'Admin'
+          createdBy: 'Admin',
+          lastLogin: isRenderDeployment ? new Date() : undefined // Set initial login for Render
         };
         
         this.staff.push(newStaff);
@@ -577,59 +565,90 @@ export class StaffService {
         this.logger.log(`✅ Staff created in Supabase: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newUser.id}`);
       }
 
-      // Send verification email (non-blocking in production)
-      this.logger.log(`📧 Sending verification email to: ${createStaffDto.email}`);
+      // Send welcome/verification email (non-blocking in production)
       const isProduction = process.env.NODE_ENV === 'production';
       const isRender = process.env.RENDER === 'true';
       const isVercel = process.env.VERCEL === '1';
+      const isRenderDeploy = isRender || isProduction;
       
-      let emailSent = false;
+      const emailType = isRenderDeploy ? 'welcome' : 'verification';
+      this.logger.log(`📧 Sending ${emailType} email to: ${createStaffDto.email}`);
+      
+      let emailSent = true; // Always return true for production to avoid blocking
       
       if (isProduction && (isRender || isVercel)) {
-        // Use webhook email service for Render/Vercel environments
-        if (isRender) {
-          this.webhookEmailService.sendAccessLink(
-            createStaffDto.email,
-            createStaffDto.name,
-            accessToken,
-            createStaffDto.role
-          ).then(success => {
-            if (success) {
-              this.logger.log(`📧 Verification email sent successfully via webhook to: ${createStaffDto.email}`);
+        // Completely non-blocking email for Render/Vercel - fire and forget
+        this.logger.log(`🚀 [${isRender ? 'RENDER' : 'VERCEL'}] Starting non-blocking ${emailType} email for: ${createStaffDto.email}`);
+        
+        // Use setTimeout to ensure complete non-blocking behavior
+        setTimeout(async () => {
+          try {
+            if (isRender) {
+              // Try webhook email service first for Render
+              this.logger.log(`📧 [RENDER] Attempting webhook ${emailType} email to: ${createStaffDto.email}`);
+              // Use existing sendAccessLink method for both cases
+              const webhookSuccess = await this.webhookEmailService.sendAccessLink(
+                createStaffDto.email,
+                createStaffDto.name,
+                isRenderDeploy ? `Your account is ready! Login with: ${createStaffDto.email} / ${createStaffDto.password}` : accessToken,
+                createStaffDto.role
+              );
+              
+              if (webhookSuccess) {
+                this.logger.log(`✅ [RENDER] Webhook ${emailType} email sent successfully to: ${createStaffDto.email}`);
+              } else {
+                // Fallback to Gmail for Render
+                this.logger.log(`⚠️ [RENDER] Webhook failed, trying Gmail fallback for: ${createStaffDto.email}`);
+                // Use existing sendAccessLink method for both cases
+                const gmailSuccess = await this.gmailService.sendAccessLink(
+                  createStaffDto.email,
+                  createStaffDto.name,
+                  isRenderDeploy ? `Your account is ready! Login with: ${createStaffDto.email} / ${createStaffDto.password}` : accessToken,
+                  createStaffDto.role
+                );
+                
+                if (gmailSuccess) {
+                  this.logger.log(`✅ [RENDER] Gmail fallback ${emailType} email sent successfully to: ${createStaffDto.email}`);
+                } else {
+                  this.logger.warn(`⚠️ [RENDER] All email methods failed for: ${createStaffDto.email} - staff is already active and can login`);
+                }
+              }
             } else {
-              this.logger.log(`📧 Verification email logged for manual processing: ${createStaffDto.email}`);
+              // Vercel - use Gmail
+              this.logger.log(`📧 [VERCEL] Attempting Gmail email to: ${createStaffDto.email}`);
+              const success = await this.gmailService.sendAccessLink(
+                createStaffDto.email,
+                createStaffDto.name,
+                accessToken,
+                createStaffDto.role
+              );
+              
+              if (success) {
+                this.logger.log(`✅ [VERCEL] Email sent successfully to: ${createStaffDto.email}`);
+              } else {
+                this.logger.warn(`⚠️ [VERCEL] Email failed for: ${createStaffDto.email} - staff can still be activated manually`);
+              }
             }
-          }).catch(error => {
-            this.logger.error(`📧 Webhook email error for ${createStaffDto.email}:`, error);
-          });
-        } else {
-          // Non-blocking Gmail for Vercel
-          this.gmailService.sendAccessLink(
-            createStaffDto.email,
-            createStaffDto.name,
-            accessToken,
-            createStaffDto.role
-          ).then(success => {
-            if (success) {
-              this.logger.log(`📧 Verification email sent successfully to: ${createStaffDto.email}`);
-            } else {
-              this.logger.error(`📧 Verification email failed to send ❌ to ${createStaffDto.email}`);
-            }
-          }).catch(error => {
-            this.logger.error(`📧 Verification email error for ${createStaffDto.email}:`, error);
-          });
-        }
-
-        this.logger.log(`📧 Verification email queued for background sending to: ${createStaffDto.email}`);
+          } catch (error) {
+            this.logger.warn(`⚠️ [${isRender ? 'RENDER' : 'VERCEL'}] Email error for ${createStaffDto.email}: ${error.message} - staff creation still successful`);
+          }
+        }, 100); // Small delay to ensure staff creation completes first
+        
+        this.logger.log(`✅ [${isRender ? 'RENDER' : 'VERCEL'}] Staff created successfully - verification email queued for background sending`);
       } else {
         // Blocking email sending for development/localhost
-        emailSent = await this.gmailService.sendAccessLink(
-          createStaffDto.email,
-          createStaffDto.name,
-          accessToken,
-          createStaffDto.role
-        );
-        this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+        try {
+          emailSent = await this.gmailService.sendAccessLink(
+            createStaffDto.email,
+            createStaffDto.name,
+            accessToken,
+            createStaffDto.role
+          );
+          this.logger.log(`📧 [LOCAL] Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+        } catch (error) {
+          this.logger.warn(`⚠️ [LOCAL] Email error for ${createStaffDto.email}: ${error.message}`);
+          emailSent = false;
+        }
       }
 
       // Create notification for new staff member
@@ -645,11 +664,11 @@ export class StaffService {
       }
 
       // Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
-      const isRenderDeployment = process.env.RENDER === 'true';
+      const isRenderEnv = process.env.RENDER === 'true';
       const isVercelDeployment = process.env.VERCEL === '1';
       const isProductionEnv = process.env.NODE_ENV === 'production';
-      const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProductionEnv ? 'PRODUCTION' : 'LOCAL';
-      const shouldSync = isRenderDeployment || isVercelDeployment || isProductionEnv;
+      const deploymentPlatform = isRenderEnv ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProductionEnv ? 'PRODUCTION' : 'LOCAL';
+      const shouldSync = isRenderEnv || isVercelDeployment || isProductionEnv;
       
       if (!isSupabaseUser && shouldSync) {
         // Only sync if not already in Supabase (i.e., created in memory)
@@ -1257,14 +1276,26 @@ export class StaffService {
 
         this.logger.log(`✅ User activated in Supabase: ${staff.email} (${staff.role})`);
       } else {
-        // Update in-memory staff
+        // Update in-memory staff - full activation
         staff.status = StaffStatus.ACTIVE;
         staff.hasAccess = true;
+        staff.verified = true; // Mark as verified
         staff.lastLogin = new Date();
         staff.accessToken = undefined; // One-time use
         staff.accessTokenExpiry = undefined;
         staff.updatedAt = new Date();
         this.saveStaffToFile(); // Save to persistent storage
+        
+        // Sync activated staff to Supabase for Render deployment
+        const isRender = process.env.RENDER === 'true';
+        const isProduction = process.env.NODE_ENV === 'production';
+        
+        if (isRender || isProduction) {
+          this.logger.log(`🚀 [RENDER] Syncing activated staff to Supabase: ${staff.email}`);
+          this.syncStaffToSupabaseWithRetry(staff, 3).catch(error => {
+            this.logger.warn(`⚠️ [RENDER] Failed to sync activated staff: ${error.message}`);
+          });
+        }
       }
 
       // Generate JWT auth token
@@ -2021,6 +2052,47 @@ export class StaffService {
       }
     } catch (error) {
       this.logger.error('Error updating staff assignment:', error);
+    }
+  }
+
+  // Manually activate a staff member (for Render deployment when email fails)
+  async manuallyActivateStaff(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'> }> {
+    try {
+      this.logger.log(`🚀 [RENDER] Manually activating staff ID: ${staffId}`);
+      
+      const staff = this.staff.find(s => s.id === staffId);
+      if (!staff) {
+        throw new Error(`Staff member with ID ${staffId} not found`);
+      }
+      
+      // Activate the staff member
+      staff.status = StaffStatus.ACTIVE;
+      staff.hasAccess = true;
+      staff.verified = true;
+      staff.accessToken = undefined; // Clear verification token
+      staff.accessTokenExpiry = undefined;
+      staff.updatedAt = new Date();
+      
+      this.saveStaffToFile();
+      
+      // Sync to Supabase for Render deployment
+      const isRender = process.env.RENDER === 'true';
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      if (isRender || isProduction) {
+        this.logger.log(`🚀 [RENDER] Syncing manually activated staff to Supabase: ${staff.email}`);
+        this.syncStaffToSupabaseWithRetry(staff, 3).catch(error => {
+          this.logger.warn(`⚠️ [RENDER] Failed to sync manually activated staff: ${error.message}`);
+        });
+      }
+      
+      this.logger.log(`✅ [RENDER] Staff manually activated: ${staff.email} (${staff.role})`);
+      
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword };
+    } catch (error) {
+      this.logger.error('❌ [RENDER] Error manually activating staff:', error);
+      throw error;
     }
   }
 

@@ -1845,6 +1845,79 @@ export class StaffController {
     }
   }
 
+  // Manually activate staff member (if email verification fails)
+  @Post('manual-activate/:id')
+  async manuallyActivateStaff(@Param('id') staffId: string) {
+    try {
+      console.log(`🚀 [RENDER] Manually activating staff ID: ${staffId}`);
+      
+      const staffData = await this.staffService.getStaffById(parseInt(staffId));
+      if (!staffData) {
+        throw new BadRequestException(`Staff member with ID ${staffId} not found`);
+      }
+      
+      // Get the full staff entity for activation
+      const allStaff = await this.staffService.getAllStaff();
+      const fullStaff = allStaff.find(s => s.id === parseInt(staffId));
+      
+      if (!fullStaff) {
+        throw new BadRequestException(`Full staff data not found for ID ${staffId}`);
+      }
+      
+      // Manually activate the staff member
+      await this.staffService.manuallyActivateStaff(parseInt(staffId));
+      
+      console.log(`✅ [RENDER] Staff manually activated: ${staffData.email}`);
+      
+      return {
+        success: true,
+        message: `Staff ${staffData.name} activated successfully`,
+        staff: {
+          id: staffData.id,
+          name: staffData.name,
+          email: staffData.email,
+          role: staffData.role,
+          status: 'ACTIVE',
+          hasAccess: true,
+          verified: true
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error(`❌ [RENDER] Manual activation failed:`, error);
+      throw new BadRequestException(`Manual activation failed: ${error.message}`);
+    }
+  }
+
+  // Send verification email to staff member for activation
+  @Post('send-verification/:id')
+  async sendVerificationEmail(@Param('id') staffId: string) {
+    try {
+      console.log(`📧 [RENDER] Sending verification email for staff ID: ${staffId}`);
+      
+      const result = await this.staffService.resendVerificationEmail(parseInt(staffId));
+      
+      console.log(`✅ [RENDER] Verification email sent to: ${result.staff.email}`);
+      
+      return {
+        success: true,
+        message: `Verification email sent to ${result.staff.name}`,
+        staff: {
+          id: result.staff.id,
+          name: result.staff.name,
+          email: result.staff.email,
+          role: result.staff.role,
+          status: result.staff.status
+        },
+        emailSent: result.emailSent,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error(`❌ [RENDER] Failed to send verification email:`, error);
+      throw new BadRequestException(`Failed to send verification email: ${error.message}`);
+    }
+  }
+
   // Grant access to all staff for Render deployment
   @Post('grant-access-all')
   async grantAccessToAllStaff() {
