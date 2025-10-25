@@ -696,7 +696,14 @@ export class StaffService {
 
   async getAllStaff(): Promise<Omit<StaffEntity, 'password'>[]> {
     try {
-      this.logger.log(`🔍 getAllStaff called - Fetching from both Supabase and memory`);
+      this.logger.log(`🚀 [RENDER] getAllStaff called - Fetching from both Supabase and memory`);
+      this.logger.log(`📊 [RENDER] Current in-memory staff count: ${this.staff.length}`);
+      
+      // Ensure data is loaded if storage is empty
+      if (this.staff.length === 0) {
+        this.logger.log('⚠️ [RENDER] Staff storage empty, reinitializing...');
+        this.initializeDefaultStaff();
+      }
       
       const allStaff: Omit<StaffEntity, 'password'>[] = [];
 

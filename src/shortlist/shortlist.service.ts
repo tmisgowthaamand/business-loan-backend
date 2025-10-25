@@ -34,20 +34,87 @@ export class ShortlistService {
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     this.loadShortlists();
+    
+    // Start periodic data refresh for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isRender || isProduction) {
+      this.startPeriodicRefresh();
+    }
+  }
+  
+  private startPeriodicRefresh() {
+    // Refresh data every 3 minutes to ensure visibility
+    setInterval(async () => {
+      await this.refreshShortlistData();
+    }, 3 * 60 * 1000);
+    
+    console.log('⏰ [RENDER] Started periodic shortlist data refresh (every 3 minutes)');
+  }
+  
+  private async refreshShortlistData() {
+    try {
+      console.log('🔄 [RENDER] Refreshing shortlist data...');
+      
+      // Reload shortlists from file if storage is empty
+      if (this.demoShortlists.length === 0) {
+        await this.loadShortlists();
+      }
+      
+      // Sync with enquiry service for latest client data
+      if (this.enquiryService) {
+        await this.syncWithEnquiryService();
+      }
+      
+      console.log(`✅ [RENDER] Shortlist data refreshed: ${this.demoShortlists.length} shortlists`);
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Shortlist data refresh failed:', error.message);
+    }
+  }
+  
+  private async syncWithEnquiryService() {
+    try {
+      const enquiries = await this.enquiryService.findAll({});
+      console.log(`🔄 [RENDER] Synced with ${enquiries.length} enquiries for shortlist`);
+      
+      // Update shortlist enquiry references
+      this.demoShortlists = this.demoShortlists.map(shortlist => {
+        const enquiry = enquiries.find(e => e.id === shortlist.enquiryId);
+        if (enquiry) {
+          shortlist.name = enquiry.name || shortlist.name;
+          shortlist.mobile = enquiry.mobile || shortlist.mobile;
+          shortlist.businessType = enquiry.businessType || shortlist.businessType;
+          shortlist.businessName = enquiry.businessName || shortlist.businessName;
+        }
+        return shortlist;
+      });
+      
+      await this.saveShortlists();
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Enquiry service sync failed:', error.message);
+    }
   }
 
   private loadShortlists() {
     try {
+      // Ensure data directory exists
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        console.log('📁 [RENDER] Created data directory for shortlists');
+      }
+      
       if (fs.existsSync(this.shortlistsFile)) {
         const data = fs.readFileSync(this.shortlistsFile, 'utf8');
         this.demoShortlists = JSON.parse(data);
-        console.log('📋 Loaded', this.demoShortlists.length, 'shortlists from file');
+        console.log('✅ [RENDER] Loaded', this.demoShortlists.length, 'shortlists from persistent storage');
       } else {
-        console.log('📋 No existing shortlists file, starting with empty array');
+        console.log('🆕 [RENDER] No existing shortlists file, starting with empty array');
         this.demoShortlists = [];
+        // Create initial empty file
+        this.saveShortlists();
       }
     } catch (error) {
-      console.log('📋 Error loading shortlists file, starting with empty array:', error.message);
+      console.log('❌ [RENDER] Error loading shortlists file, starting with empty array:', error.message);
       this.demoShortlists = [];
     }
   }
@@ -196,11 +263,17 @@ export class ShortlistService {
     }
   }
 
-  async findAll(user: User) {
+  async findAll(user?: User) {
     try {
-      console.log('📝 Getting shortlists from file storage, count:', this.demoShortlists.length);
+      console.log('🚀 [RENDER] Getting shortlists from file storage, count:', this.demoShortlists.length);
       
-      // Ensure we have the latest data from file
+      // Ensure data is loaded if storage is empty
+      if (this.demoShortlists.length === 0) {
+        console.log('⚠️ [RENDER] Storage empty, reloading shortlists...');
+        await this.loadShortlists();
+      }
+      
+      // Refresh data from file to ensure latest state
       this.loadShortlists();
       
       // Filter by user role if needed
@@ -209,15 +282,24 @@ export class ShortlistService {
         filteredShortlists = this.demoShortlists.filter(shortlist => shortlist.staffId === user.id);
       }
       
+      // Ensure all shortlists have required display fields
+      filteredShortlists = filteredShortlists.map(shortlist => ({
+        ...shortlist,
+        displayName: shortlist.name || shortlist.businessName || 'Unknown Client',
+        clientInfo: `${shortlist.name || 'Unknown'} - ${shortlist.businessName || 'Business'}`,
+        statusDisplay: shortlist.interestStatus || 'INTERESTED'
+      }));
+      
       // Sort by creation date (newest first)
       const sortedShortlists = filteredShortlists.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       
-      console.log('📝 Returning', sortedShortlists.length, 'shortlists with real client data');
+      console.log('✅ [RENDER] Returning', sortedShortlists.length, 'shortlists with real client data');
+      console.log('📊 [RENDER] Sample shortlist names:', sortedShortlists.slice(0, 3).map(s => s.name));
       return sortedShortlists;
     } catch (error) {
-      console.log('📝 Error in findAll, returning empty shortlist:', error.message);
+      console.log('❌ [RENDER] Error in findAll, returning empty shortlist:', error.message);
       return [];
     }
   }

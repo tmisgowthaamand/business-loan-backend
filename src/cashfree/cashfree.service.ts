@@ -30,22 +30,88 @@ export class CashfreeService {
     private shortlistService: ShortlistService,
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
-    console.log('🔄 CashfreeService constructor called');
+    console.log('🚀 [RENDER] CashfreeService constructor called');
     this.loadPayments();
+    
+    // Start periodic data refresh for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isRender || isProduction) {
+      this.startPeriodicRefresh();
+    }
+  }
+  
+  private startPeriodicRefresh() {
+    // Refresh data every 4 minutes to ensure visibility
+    setInterval(async () => {
+      await this.refreshPaymentData();
+    }, 4 * 60 * 1000);
+    
+    console.log('⏰ [RENDER] Started periodic payment data refresh (every 4 minutes)');
+  }
+  
+  private async refreshPaymentData() {
+    try {
+      console.log('🔄 [RENDER] Refreshing payment data...');
+      
+      // Reload payments from file if storage is empty
+      if (this.demoApplications.length === 0) {
+        await this.loadPayments();
+      }
+      
+      // Sync with shortlist service for latest client data
+      if (this.shortlistService) {
+        await this.syncWithShortlistService();
+      }
+      
+      console.log(`✅ [RENDER] Payment data refreshed: ${this.demoApplications.length} applications`);
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Payment data refresh failed:', error.message);
+    }
+  }
+  
+  private async syncWithShortlistService() {
+    try {
+      const shortlists = await this.shortlistService.findAll(null);
+      console.log(`🔄 [RENDER] Synced with ${shortlists.length} shortlists for payment gateway`);
+      
+      // Update payment application references with latest shortlist data
+      this.demoApplications = this.demoApplications.map(payment => {
+        const shortlist = shortlists.find(s => s.id === payment.shortlistId);
+        if (shortlist) {
+          payment.name = shortlist.name || payment.name;
+          payment.mobile = shortlist.mobile || payment.mobile;
+          payment.businessType = shortlist.businessType || payment.businessType;
+          payment.businessName = shortlist.businessName || payment.businessName;
+          payment.loanAmount = shortlist.loanAmount || payment.loanAmount;
+        }
+        return payment;
+      });
+      
+      await this.savePayments();
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Shortlist service sync failed:', error.message);
+    }
   }
 
   private loadPayments() {
     try {
+      // Ensure data directory exists
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        console.log('📁 [RENDER] Created data directory for payments');
+      }
+      
       if (fs.existsSync(this.paymentsFile)) {
         const data = fs.readFileSync(this.paymentsFile, 'utf8');
         this.demoApplications = JSON.parse(data);
-        console.log('💳 Loaded', this.demoApplications.length, 'payment applications from file');
+        console.log('✅ [RENDER] Loaded', this.demoApplications.length, 'payment applications from persistent storage');
       } else {
-        console.log('💳 No existing payments file, creating sample data');
+        console.log('🆕 [RENDER] No existing payments file, creating sample data');
         this.createSamplePayments();
       }
     } catch (error) {
-      console.log('💳 Error loading payments file, creating sample data:', error.message);
+      console.log('❌ [RENDER] Error loading payments file, creating sample data:', error.message);
       this.createSamplePayments();
     }
   }
@@ -330,17 +396,33 @@ export class CashfreeService {
     }
   }
 
-  async findAll(user: User) {
-    console.log('💳 Getting payment applications from file storage, count:', this.demoApplications.length);
+  async findAll(user?: User) {
+    console.log('🚀 [RENDER] Getting payment applications from file storage, count:', this.demoApplications.length);
     
-    // Ensure we have the latest data from file
+    // Ensure data is loaded if storage is empty
+    if (this.demoApplications.length === 0) {
+      console.log('⚠️ [RENDER] Storage empty, reloading payment applications...');
+      await this.loadPayments();
+    }
+    
+    // Refresh data from file to ensure latest state
     this.loadPayments();
     
-    const sortedApplications = this.demoApplications.sort((a, b) => 
+    // Ensure all applications have required display fields
+    const enhancedApplications = this.demoApplications.map(app => ({
+      ...app,
+      displayName: app.name || app.shortlist?.name || 'Unknown Client',
+      clientInfo: `${app.name || 'Unknown'} - ${app.businessName || 'Business'}`,
+      statusDisplay: app.status || 'PENDING',
+      amountDisplay: app.loanAmount ? `₹${app.loanAmount.toLocaleString()}` : 'N/A'
+    }));
+    
+    const sortedApplications = enhancedApplications.sort((a, b) => 
       new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
     );
     
-    console.log('💳 Returning', sortedApplications.length, 'payment applications with real client data');
+    console.log('✅ [RENDER] Returning', sortedApplications.length, 'payment applications with real client data');
+    console.log('📊 [RENDER] Sample application names:', sortedApplications.slice(0, 3).map(a => a.name));
     return sortedApplications;
   }
 
@@ -673,6 +755,7 @@ export class CashfreeService {
       cleared: clearedCount
     };
   }
+
 
   // Enhanced sync all payments to Supabase with return value
   async syncAllPaymentsToSupabaseEnhanced(): Promise<{ message: string; synced: number; errors: number }> {

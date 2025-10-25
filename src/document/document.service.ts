@@ -147,39 +147,76 @@ export class DocumentService {
   constructor(
     private config: ConfigService,
     private prisma: PrismaService,
-    @Optional() private supabaseService: SupabaseService,
     private persistenceService: PersistenceService,
     private idGeneratorService: IdGeneratorService,
-    @Inject(forwardRef(() => EnquiryService))
-    private enquiryService: EnquiryService,
-    @Inject(forwardRef(() => NotificationsService))
-    private notificationsService: NotificationsService,
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
+    @Optional() private supabaseService?: SupabaseService,
+    @Inject(forwardRef(() => EnquiryService))
+    @Optional() private enquiryService?: EnquiryService,
+    @Inject(forwardRef(() => NotificationsService))
+    @Optional() private notificationsService?: NotificationsService,
   ) {
     this.loadDocuments();
-    // Initialize Supabase storage asynchronously (non-blocking)
-    this.initializeSupabaseStorageAsync();
+    
+    // Start periodic data refresh for Render deployment
+    if (this.isRender || this.isProduction) {
+      this.startPeriodicRefresh();
+    }
   }
-
-  // Initialize Supabase storage asynchronously (non-blocking for Render deployment)
-  private async initializeSupabaseStorageAsync(): Promise<void> {
-    // Use setTimeout to make this truly non-blocking
-    setTimeout(async () => {
-      if (this.isRender || this.isProduction) {
-        try {
-          this.logger.log('🚀 [RENDER] Initializing Supabase storage for document uploads...');
-          const bucketReady = await this.ensureSupabaseBucket();
-          
-          if (bucketReady) {
-            this.logger.log('✅ [RENDER] Supabase storage initialized successfully');
-          } else {
-            this.logger.warn('⚠️ [RENDER] Supabase storage not available - using local storage fallback');
-          }
-        } catch (error) {
-          this.logger.warn('⚠️ [RENDER] Supabase storage initialization failed - using local storage fallback:', error.message);
-        }
+  
+  private startPeriodicRefresh() {
+    // Refresh data every 2 minutes to ensure visibility
+    setInterval(async () => {
+      await this.refreshDocumentData();
+    }, 2 * 60 * 1000);
+    
+    this.logger.log('⏰ [RENDER] Started periodic document data refresh (every 2 minutes)');
+  }
+  
+  private async refreshDocumentData() {
+    try {
+      this.logger.log('🔄 [RENDER] Refreshing document data...');
+      
+      // Reload documents from file if storage is empty
+      if (this.demoDocuments.length === 0) {
+        await this.loadDocuments();
       }
-    }, 100); // Small delay to ensure constructor completes first
+      
+      // Sync with enquiry service for latest data
+      if (this.enquiryService) {
+        await this.syncWithEnquiryService();
+      }
+      
+      this.logger.log(`✅ [RENDER] Document data refreshed: ${this.demoDocuments.length} documents`);
+    } catch (error) {
+      this.logger.warn('⚠️ [RENDER] Document data refresh failed:', error.message);
+    }
+  }
+  
+  private async syncWithEnquiryService() {
+    try {
+      const enquiries = await this.enquiryService.findAll({});
+      this.logger.log(`🔄 [RENDER] Synced with ${enquiries.length} enquiries`);
+      
+      // Update document enquiry references
+      this.demoDocuments = this.demoDocuments.map(doc => {
+        const enquiry = enquiries.find(e => e.id === doc.enquiryId);
+        if (enquiry) {
+          doc.enquiry = {
+            id: enquiry.id,
+            name: enquiry.name || enquiry.businessName,
+            mobile: enquiry.mobile,
+            businessType: enquiry.businessType,
+            businessName: enquiry.businessName
+          };
+        }
+        return doc;
+      });
+      
+      await this.saveDocuments();
+    } catch (error) {
+      this.logger.warn('⚠️ [RENDER] Enquiry service sync failed:', error.message);
+    }
   }
 
   private async initializeService() {
@@ -1251,10 +1288,16 @@ export class DocumentService {
     throw lastError;
   }
 
-  async findAll(user: User) {
+  async findAll(user?: User) {
     try {
-      console.log('📄 Fetching all documents for user:', user.id);
-      console.log('📄 Demo documents stored:', this.demoDocuments.length);
+      console.log('🚀 [RENDER] Fetching all documents for user:', user?.id || 'system');
+      console.log('📊 [RENDER] Demo documents stored:', this.demoDocuments.length);
+      
+      // Ensure data is loaded if storage is empty
+      if (this.demoDocuments.length === 0) {
+        console.log('⚠️ [RENDER] Storage empty, reloading documents...');
+        await this.loadDocuments();
+      }
       
       // Auto-deduplicate documents by enquiryId + type combination (keep the most recent)
       const uniqueDocuments = new Map();
@@ -1300,7 +1343,8 @@ export class DocumentService {
         new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
       );
       
-      console.log('📄 Returning documents with refreshed enquiry info:', sortedDocuments.length);
+      console.log('✅ [RENDER] Returning documents with refreshed enquiry info:', sortedDocuments.length);
+      console.log('📊 [RENDER] Sample document types:', sortedDocuments.slice(0, 3).map(d => d.type));
       return sortedDocuments;
     } catch (error) {
       console.log('📄 Error fetching documents, returning empty array');

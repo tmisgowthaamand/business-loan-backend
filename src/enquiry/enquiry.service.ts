@@ -45,7 +45,25 @@ export class EnquiryService {
       const isRender = process.env.RENDER === 'true';
       const isProduction = process.env.NODE_ENV === 'production';
       
-      console.log('📋 Loading enquiries...', { isRender, isProduction });
+      console.log('🚀 [RENDER] Loading enquiries for persistent data...', { isRender, isProduction });
+      
+      // Ensure data directory exists
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        console.log('📁 [RENDER] Created data directory for persistence');
+      }
+      
+      // Load from file first for immediate availability
+      if (fs.existsSync(this.enquiriesFile)) {
+        const fileData = fs.readFileSync(this.enquiriesFile, 'utf8');
+        this.enquiriesStorage = JSON.parse(fileData);
+        console.log(`✅ [RENDER] Loaded ${this.enquiriesStorage.length} enquiries from persistent storage`);
+      } else {
+        // Initialize with sample data for first run
+        this.enquiriesStorage = this.createSampleEnquiries();
+        this.saveEnquiries();
+        console.log(`🆕 [RENDER] Created ${this.enquiriesStorage.length} sample enquiries for first run`);
+      }
       
       // Use persistence service for production-ready data loading
       const enquiries = await this.persistenceService.loadData('enquiries', []);
@@ -75,6 +93,77 @@ export class EnquiryService {
       console.log('📋 Error loading enquiries, creating default enquiries:', error.message);
       await this.createDefaultEnquiries();
     }
+  }
+
+  private async saveEnquiries() {
+    try {
+      // Ensure data directory exists
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      }
+      
+      // Save to file with error handling
+      fs.writeFileSync(this.enquiriesFile, JSON.stringify(this.enquiriesStorage, null, 2));
+      console.log(`💾 [RENDER] Saved ${this.enquiriesStorage.length} enquiries to persistent file storage`);
+      
+      // Also save to persistence service for redundancy
+      try {
+        await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
+        console.log('💾 [RENDER] Also saved to persistence service');
+      } catch (error) {
+        console.warn('⚠️ [RENDER] Persistence service backup failed:', error.message);
+      }
+    } catch (error) {
+      console.error('❌ [RENDER] Error saving enquiries to file:', error);
+      throw error;
+    }
+  }
+  
+  private createSampleEnquiries(): any[] {
+    return [
+      {
+        id: 1001,
+        name: 'BALAMURUGAN',
+        mobile: '9876543215',
+        businessType: 'Manufacturing',
+        businessName: 'Bala Industries',
+        loanAmount: 500000,
+        status: 'NEW',
+        assignedTo: null,
+        clientName: 'BALAMURUGAN',
+        enquiryName: 'BALAMURUGAN - Bala Industries',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 1002,
+        name: 'RAJESH KUMAR',
+        mobile: '9876543216',
+        businessType: 'Trading',
+        businessName: 'Kumar Enterprises',
+        loanAmount: 750000,
+        status: 'NEW',
+        assignedTo: null,
+        clientName: 'RAJESH KUMAR',
+        enquiryName: 'RAJESH KUMAR - Kumar Enterprises',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 1003,
+        name: 'PRIYA SHARMA',
+        mobile: '9876543217',
+        businessType: 'Services',
+        businessName: 'Sharma Consultancy',
+        loanAmount: 300000,
+        status: 'NEW',
+        assignedTo: null,
+        clientName: 'PRIYA SHARMA',
+        enquiryName: 'PRIYA SHARMA - Sharma Consultancy',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
   }
 
   private async createDefaultEnquiries() {
@@ -402,56 +491,10 @@ export class EnquiryService {
     }
   }
 
-  private async saveEnquiries() {
-    try {
-      const isRender = process.env.RENDER === 'true';
-      const isProduction = process.env.NODE_ENV === 'production';
-      
-      // Enhanced saving for Render deployment with retry mechanism
-      let saveAttempts = 0;
-      const maxAttempts = 3;
-      
-      while (saveAttempts < maxAttempts) {
-        try {
-          // Use persistence service for production-ready saving
-          await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
-          console.log('💾 Saved', this.enquiriesStorage.length, 'enquiries via persistence service');
-          
-          // Additional backup save for Render deployment
-          if (isRender || isProduction) {
-            // Create backup timestamp
-            const backupData = {
-              timestamp: new Date().toISOString(),
-              environment: isRender ? 'render' : 'production',
-              count: this.enquiriesStorage.length,
-              enquiries: this.enquiriesStorage
-            };
-            
-            await this.persistenceService.saveData('enquiries_backup', backupData);
-            console.log('🔄 Backup saved for deployment persistence');
-          }
-          
-          break; // Success, exit retry loop
-        } catch (saveError) {
-          saveAttempts++;
-          console.error(`❌ Save attempt ${saveAttempts} failed:`, saveError.message);
-          
-          if (saveAttempts >= maxAttempts) {
-            throw saveError;
-          }
-          
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error saving enquiries after all attempts:', error);
-      // Don't throw error to prevent breaking the application flow
-    }
-  }
 
   async create(createEnquiryDto: CreateEnquiryDto, userId: number = 1) {
-    console.log('📝 EnquiryService.create called with:', createEnquiryDto, 'userId:', userId);
+    console.log('🚀 [RENDER] EnquiryService.create called with:', createEnquiryDto, 'userId:', userId);
+    console.log('📊 [RENDER] Current enquiries count before create:', this.enquiriesStorage.length);
     
     // Validate phone number format (exactly 10 digits)
     if (!createEnquiryDto.mobile || !/^\d{10}$/.test(createEnquiryDto.mobile)) {
@@ -511,7 +554,15 @@ export class EnquiryService {
     // 1. Store in local storage first (for immediate response)
     this.enquiriesStorage.push(mockEnquiry);
     await this.saveEnquiries();
-    console.log('✅ Enquiry saved to local storage:', mockEnquiry.name);
+    console.log('✅ [RENDER] Enquiry saved to persistent storage:', mockEnquiry.name);
+    
+    // Also save to persistence service for additional redundancy
+    try {
+      await this.persistenceService.saveData('enquiries', this.enquiriesStorage);
+      console.log('✅ [RENDER] Enquiry also saved to persistence service');
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Persistence service save failed:', error.message);
+    }
     
     // 2. Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
     const isRenderDeployment = process.env.RENDER === 'true';
@@ -691,10 +742,24 @@ export class EnquiryService {
   }
 
   async findAll(query: any, user?: User) {
-    console.log('📋 EnquiryService.findAll called with query:', query, 'user:', user?.id);
-    console.log('📋 Current enquiries in storage:', this.enquiriesStorage.length);
+    console.log('🚀 [RENDER] EnquiryService.findAll called with query:', query, 'user:', user?.id);
+    console.log('📊 [RENDER] Current enquiries in storage:', this.enquiriesStorage.length);
+    
+    // Ensure data is loaded if storage is empty
+    if (this.enquiriesStorage.length === 0) {
+      console.log('⚠️ [RENDER] Storage empty, reloading data...');
+      await this.loadEnquiries();
+    }
     
     let enquiries = [...this.enquiriesStorage];
+    
+    // Ensure all enquiries have required display fields
+    enquiries = enquiries.map(enquiry => ({
+      ...enquiry,
+      clientName: enquiry.clientName || enquiry.name || 'Unknown Client',
+      enquiryName: enquiry.enquiryName || `${enquiry.name || 'Client'} - ${enquiry.businessName || 'Business'}`,
+      displayName: enquiry.name || enquiry.businessName || 'Unknown'
+    }));
     
     // Apply filters
     if (query.search) {
@@ -727,7 +792,8 @@ export class EnquiryService {
     const offset = query.offset ? parseInt(query.offset) : 0;
     const paginatedEnquiries = enquiries.slice(offset, offset + limit);
     
-    console.log('📋 Returning', paginatedEnquiries.length, 'enquiries out of', enquiries.length, 'total');
+    console.log('✅ [RENDER] Returning', paginatedEnquiries.length, 'enquiries out of', enquiries.length, 'total');
+    console.log('📊 [RENDER] Sample enquiry names:', paginatedEnquiries.slice(0, 3).map(e => e.name || e.businessName));
     return paginatedEnquiries;
   }
 

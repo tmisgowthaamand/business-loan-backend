@@ -31,7 +31,39 @@ export class TransactionService {
     private notificationsService: NotificationsService,
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
+    console.log('🚀 [RENDER] TransactionService constructor called');
     this.loadTransactions();
+    
+    // Start periodic data refresh for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isRender || isProduction) {
+      this.startPeriodicRefresh();
+    }
+  }
+  
+  private startPeriodicRefresh() {
+    // Refresh data every 5 minutes to ensure visibility
+    setInterval(async () => {
+      await this.refreshTransactionData();
+    }, 5 * 60 * 1000);
+    
+    console.log('⏰ [RENDER] Started periodic transaction data refresh (every 5 minutes)');
+  }
+  
+  private async refreshTransactionData() {
+    try {
+      console.log('🔄 [RENDER] Refreshing transaction data...');
+      
+      // Reload transactions from file if storage is empty
+      if (this.demoTransactions.length === 0) {
+        await this.loadTransactions();
+      }
+      
+      console.log(`✅ [RENDER] Transaction data refreshed: ${this.demoTransactions.length} transactions`);
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Transaction data refresh failed:', error.message);
+    }
   }
 
   private loadTransactions() {
@@ -39,13 +71,15 @@ export class TransactionService {
       // Ensure data directory exists
       if (!fs.existsSync(this.dataDir)) {
         fs.mkdirSync(this.dataDir, { recursive: true });
+        console.log('📁 [RENDER] Created data directory for transactions');
       }
 
       if (fs.existsSync(this.transactionsFile)) {
         const data = fs.readFileSync(this.transactionsFile, 'utf8');
         this.demoTransactions = JSON.parse(data);
-        console.log('💰 Loaded', this.demoTransactions.length, 'transactions from file');
+        console.log('✅ [RENDER] Loaded', this.demoTransactions.length, 'transactions from persistent storage');
       } else {
+        console.log('🆕 [RENDER] No existing transactions file, creating sample data');
         this.demoTransactions = [];
         this.createSampleTransactions();
         console.log('💰 No existing transactions file, created sample transactions');
@@ -59,10 +93,13 @@ export class TransactionService {
 
   private saveTransactions() {
     try {
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      }
       fs.writeFileSync(this.transactionsFile, JSON.stringify(this.demoTransactions, null, 2));
-      console.log('💰 Saved', this.demoTransactions.length, 'transactions to file');
+      console.log('💾 [RENDER] Saved', this.demoTransactions.length, 'transactions to persistent storage');
     } catch (error) {
-      console.error('💰 Error saving transactions file:', error);
+      console.error('❌ [RENDER] Error saving transactions file:', error);
     }
   }
 
@@ -102,7 +139,7 @@ export class TransactionService {
 
     this.demoTransactions.push(...sampleTransactions);
     this.saveTransactions();
-    console.log('💰 Created', sampleTransactions.length, 'sample transactions');
+    console.log('💰 [RENDER] Created', sampleTransactions.length, 'sample transactions');
   }
 
   async create(createTransactionDto: CreateTransactionDto, userId: number) {
@@ -173,17 +210,38 @@ export class TransactionService {
     }
   }
 
-  async findAll(user: User) {
+  async findAll(user?: User) {
     try {
-      // Force demo mode - skip Prisma entirely
-      console.log('💰 Using demo mode - returning in-memory transactions');
+      console.log('🚀 [RENDER] Getting transactions from file storage, count:', this.demoTransactions.length);
+      
+      // Ensure data is loaded if storage is empty
+      if (this.demoTransactions.length === 0) {
+        console.log('⚠️ [RENDER] Storage empty, reloading transactions...');
+        await this.loadTransactions();
+      }
+      
+      // Refresh data from file to ensure latest state
+      this.loadTransactions();
+      
+      // Ensure all transactions have required display fields
+      const enhancedTransactions = this.demoTransactions.map(transaction => ({
+        ...transaction,
+        displayName: transaction.name || 'Unknown Transaction',
+        statusDisplay: transaction.status || 'PENDING',
+        amountDisplay: transaction.amount ? `₹${transaction.amount.toLocaleString()}` : 'N/A',
+        dateDisplay: transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'
+      }));
       
       // Sort by creation date (newest first)
-      return this.demoTransactions.sort((a, b) => 
+      const sortedTransactions = enhancedTransactions.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
+      
+      console.log('✅ [RENDER] Returning', sortedTransactions.length, 'transactions with enhanced data');
+      console.log('📊 [RENDER] Sample transaction names:', sortedTransactions.slice(0, 3).map(t => t.name));
+      return sortedTransactions;
     } catch (error) {
-      console.log('💰 Error in findAll, returning empty transactions');
+      console.log('❌ [RENDER] Error in findAll, returning empty transactions:', error.message);
       return [];
     }
   }
