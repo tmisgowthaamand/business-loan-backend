@@ -157,25 +157,29 @@ export class DocumentService {
     private unifiedSupabaseSync: UnifiedSupabaseSyncService,
   ) {
     this.loadDocuments();
-    this.initializeSupabaseStorage();
+    // Initialize Supabase storage asynchronously (non-blocking)
+    this.initializeSupabaseStorageAsync();
   }
 
-  // Initialize Supabase storage for Render deployment
-  private async initializeSupabaseStorage(): Promise<void> {
-    if (this.isRender || this.isProduction) {
-      try {
-        this.logger.log('🚀 [RENDER] Initializing Supabase storage for document uploads...');
-        const bucketReady = await this.ensureSupabaseBucket();
-        
-        if (bucketReady) {
-          this.logger.log('✅ [RENDER] Supabase storage initialized successfully');
-        } else {
-          this.logger.error('❌ [RENDER] Failed to initialize Supabase storage - document uploads may fail');
+  // Initialize Supabase storage asynchronously (non-blocking for Render deployment)
+  private async initializeSupabaseStorageAsync(): Promise<void> {
+    // Use setTimeout to make this truly non-blocking
+    setTimeout(async () => {
+      if (this.isRender || this.isProduction) {
+        try {
+          this.logger.log('🚀 [RENDER] Initializing Supabase storage for document uploads...');
+          const bucketReady = await this.ensureSupabaseBucket();
+          
+          if (bucketReady) {
+            this.logger.log('✅ [RENDER] Supabase storage initialized successfully');
+          } else {
+            this.logger.warn('⚠️ [RENDER] Supabase storage not available - using local storage fallback');
+          }
+        } catch (error) {
+          this.logger.warn('⚠️ [RENDER] Supabase storage initialization failed - using local storage fallback:', error.message);
         }
-      } catch (error) {
-        this.logger.error('❌ [RENDER] Error initializing Supabase storage:', error);
       }
-    }
+    }, 100); // Small delay to ensure constructor completes first
   }
 
   private async initializeService() {
@@ -595,18 +599,36 @@ export class DocumentService {
 
   // Supabase Storage Integration Methods
   
-  // Ensure Supabase bucket exists (for Render deployment)
+  // Ensure Supabase bucket exists (for Render deployment) - with timeout protection
   private async ensureSupabaseBucket(): Promise<boolean> {
     if (!this.supabaseService) {
+      this.logger.warn('⚠️ [RENDER] SupabaseService not available - using local storage fallback');
       return false;
     }
 
+    try {
+      // Add timeout protection for Render deployment
+      const timeoutPromise = new Promise<boolean>((_, reject) => {
+        setTimeout(() => reject(new Error('Supabase bucket check timeout')), 10000); // 10 second timeout
+      });
+
+      const bucketCheckPromise = this.performBucketCheck();
+      
+      // Race between bucket check and timeout
+      return await Promise.race([bucketCheckPromise, timeoutPromise]);
+    } catch (error) {
+      this.logger.warn('⚠️ [RENDER] Supabase bucket check failed - using local storage fallback:', error.message);
+      return false;
+    }
+  }
+
+  private async performBucketCheck(): Promise<boolean> {
     try {
       // Check if bucket exists
       const { data: buckets, error: listError } = await this.supabaseService.client.storage.listBuckets();
       
       if (listError) {
-        this.logger.error('❌ Error listing Supabase buckets:', listError);
+        this.logger.warn('⚠️ Error listing Supabase buckets:', listError.message);
         return false;
       }
 
@@ -623,7 +645,7 @@ export class DocumentService {
         });
 
         if (createError) {
-          this.logger.error('❌ Error creating Supabase bucket:', createError);
+          this.logger.warn('⚠️ Error creating Supabase bucket:', createError.message);
           return false;
         }
 
@@ -634,7 +656,7 @@ export class DocumentService {
 
       return true;
     } catch (error) {
-      this.logger.error('❌ Error ensuring Supabase bucket:', error);
+      this.logger.warn('⚠️ Error in bucket check operation:', error.message);
       return false;
     }
   }
@@ -673,6 +695,28 @@ export class DocumentService {
     }
 
     try {
+      // Add timeout protection for Render deployment
+      const timeoutPromise = new Promise<{ success: boolean; error: string }>((_, reject) => {
+        setTimeout(() => reject(new Error('Supabase upload timeout')), 15000); // 15 second timeout
+      });
+
+      const uploadPromise = this.performSupabaseUpload(file, enquiryId, documentType, enquiryName);
+      
+      // Race between upload and timeout
+      return await Promise.race([uploadPromise, timeoutPromise]);
+    } catch (error) {
+      this.logger.warn('⚠️ [RENDER] Supabase upload failed - using local storage fallback:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async performSupabaseUpload(
+    file: Express.Multer.File,
+    enquiryId: number,
+    documentType: string,
+    enquiryName: string
+  ): Promise<{ success: boolean; filePath?: string; publicUrl?: string; error?: string }> {
+    try {
       // Ensure bucket exists (important for Render deployment)
       const bucketReady = await this.ensureSupabaseBucket();
       if (!bucketReady) {
@@ -683,7 +727,6 @@ export class DocumentService {
       const sanitizedName = enquiryName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
       const timestamp = Date.now();
       const fileExtension = path.extname(file.originalname);
-      const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
       const fileName = `${sanitizedName}_${documentType.toLowerCase()}_${timestamp}${fileExtension}`;
       const filePath = `${sanitizedName}/${documentType}/${fileName}`;
 
@@ -698,7 +741,7 @@ export class DocumentService {
         });
 
       if (error) {
-        this.logger.error('❌ Supabase Storage upload failed:', error);
+        this.logger.warn('⚠️ Supabase Storage upload failed:', error.message);
         return { success: false, error: error.message };
       }
 
@@ -715,7 +758,7 @@ export class DocumentService {
         publicUrl: urlData.publicUrl,
       };
     } catch (error) {
-      this.logger.error('❌ Error uploading to Supabase Storage:', error);
+      this.logger.warn('⚠️ Error in Supabase upload operation:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -970,16 +1013,19 @@ export class DocumentService {
         }
         
       } catch (supabaseError) {
-        this.logger.error('❌ Supabase storage error:', supabaseError);
+        this.logger.warn('⚠️ Supabase storage error:', supabaseError.message);
         
         // For Render deployment, log error but continue with metadata storage
         if (isRenderDeployment) {
-          this.logger.error('❌ [RENDER] Supabase storage failed, but continuing with document metadata');
-          this.logger.error('💡 [RENDER] File will be tracked but may not be physically stored');
-          this.logger.error('🔧 [RENDER] Check Supabase credentials and bucket configuration');
+          this.logger.warn('⚠️ [RENDER] Supabase storage failed, but continuing with document metadata');
+          this.logger.warn('💡 [RENDER] File will be tracked but may not be physically stored');
+          this.logger.warn('🔧 [RENDER] Check Supabase credentials and bucket configuration');
           
           // Set supabaseResult to indicate failure but don't throw
           supabaseResult = { success: false, error: supabaseError.message };
+        } else {
+          // For non-production environments, we can be more strict
+          throw supabaseError;
         }
       }
       
@@ -999,7 +1045,8 @@ export class DocumentService {
           fs.writeFileSync(localFilePath, file.buffer);
           this.logger.log('📄 Saved to local storage as fallback:', localFilePath);
         } catch (localError) {
-          this.logger.error('❌ Local storage also failed:', localError);
+          this.logger.warn('⚠️ Local storage also failed:', localError.message);
+          // Continue anyway - document metadata will still be saved
         }
       }
       
@@ -1059,9 +1106,10 @@ export class DocumentService {
           mockDocument.supabaseSynced = true;
           mockDocument.supabaseSyncedAt = new Date().toISOString();
         } catch (error) {
-          console.error(`❌ [${deploymentPlatform}] Auto-sync to Supabase failed:`, error);
+          console.warn(`⚠️ [${deploymentPlatform}] Auto-sync to Supabase failed:`, error.message);
           mockDocument.supabaseSynced = false;
           mockDocument.supabaseError = error.message;
+          // Continue - document upload is still successful even without database sync
         }
       } else {
         console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');

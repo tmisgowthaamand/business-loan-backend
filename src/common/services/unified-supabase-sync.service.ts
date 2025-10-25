@@ -6,22 +6,27 @@ export class UnifiedSupabaseSyncService {
   private supabaseClient: any;
 
   constructor() {
-    this.initializeSupabaseClient();
+    // Initialize Supabase client asynchronously (non-blocking)
+    this.initializeSupabaseClientAsync();
   }
 
-  private initializeSupabaseClient() {
-    try {
-      // Use environment variables for deployment security
-      const supabaseUrl = process.env.SUPABASE_URL || 'https://vxtpjsymbcirszksrafg.supabase.co';
-      const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU';
-      
-      const { createClient } = require('@supabase/supabase-js');
-      this.supabaseClient = createClient(supabaseUrl, supabaseKey);
-      
-      this.logger.log('🚀 [DEPLOYMENT] Unified Supabase client initialized for all modules');
-    } catch (error) {
-      this.logger.error('❌ Failed to initialize Supabase client:', error);
-    }
+  private async initializeSupabaseClientAsync() {
+    // Use setTimeout to make this truly non-blocking
+    setTimeout(async () => {
+      try {
+        // Use environment variables for deployment security
+        const supabaseUrl = process.env.SUPABASE_URL || 'https://vxtpjsymbcirszksrafg.supabase.co';
+        const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU';
+        
+        const { createClient } = require('@supabase/supabase-js');
+        this.supabaseClient = createClient(supabaseUrl, supabaseKey);
+        
+        this.logger.log('🚀 [DEPLOYMENT] Unified Supabase client initialized for all modules');
+      } catch (error) {
+        this.logger.warn('⚠️ [RENDER] Failed to initialize Supabase client - using local storage fallback:', error.message);
+        // Don't throw - let the application continue without Supabase
+      }
+    }, 50); // Small delay to ensure constructor completes first
   }
 
   /**

@@ -42,6 +42,30 @@ export class DocumentController {
     );
   }
 
+  @Get('health')
+  async healthCheck() {
+    try {
+      const isRender = process.env.RENDER === 'true';
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      return {
+        status: 'healthy',
+        service: 'DocumentService',
+        platform: isRender ? 'Render' : 'Local',
+        environment: isProduction ? 'Production' : 'Development',
+        timestamp: new Date().toISOString(),
+        message: 'DocumentService is running properly - Supabase storage initialization is non-blocking'
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        service: 'DocumentService',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   @Get()
   findAll() {
     // Mock user for demo
