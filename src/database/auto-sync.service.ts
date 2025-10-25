@@ -100,11 +100,11 @@ export class AutoSyncService {
             name: enquiryData.name,
             mobile: enquiryData.mobile,
             email: enquiryData.email,
-            businessName: enquiryData.businessName,
-            businessType: enquiryData.businessType,
-            loanAmount: enquiryData.loanAmount,
-            createdAt: enquiryData.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            business_name: enquiryData.businessName,
+            business_type: enquiryData.businessType,
+            loan_amount: enquiryData.loanAmount,
+            created_at: enquiryData.createdAt || new Date().toISOString(),
+            // Remove updatedAt as it doesn't exist in Supabase schema
           }, {
             onConflict: 'id'
           });

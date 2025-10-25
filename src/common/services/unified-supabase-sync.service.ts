@@ -116,17 +116,17 @@ export class UnifiedSupabaseSyncService {
    * Sync enquiry data to Supabase
    */
   async syncEnquiry(enquiry: any): Promise<void> {
-    // Only include columns that exist in Supabase schema
+    // Only include columns that exist in Supabase schema - use snake_case for Supabase
     const supabaseData = {
       id: enquiry.id,
       name: enquiry.name,
-      businessName: enquiry.businessName || enquiry.businessType || null,
+      business_name: enquiry.businessName || enquiry.businessType || null,
       mobile: enquiry.mobile,
       email: enquiry.email || null,
-      businessType: enquiry.businessType || 'General Business',
-      loanAmount: enquiry.loanAmount || null,
-      createdAt: enquiry.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      business_type: enquiry.businessType || 'General Business',
+      loan_amount: enquiry.loanAmount || null,
+      created_at: enquiry.createdAt || new Date().toISOString(),
+      // Remove updatedAt as it doesn't exist in Supabase schema
     };
 
     this.logger.log(`🔄 [RENDER] Syncing enquiry with safe schema: ${enquiry.name}`);
@@ -139,19 +139,19 @@ export class UnifiedSupabaseSyncService {
   async syncDocument(document: any): Promise<void> {
     const supabaseData = {
       id: document.id,
-      enquiryId: document.enquiryId,
+      enquiry_id: document.enquiryId,
       type: document.type,
       filename: document.filename,
-      originalName: document.originalName,
-      fileSize: document.fileSize,
-      mimeType: document.mimeType,
+      original_name: document.originalName,
+      file_size: document.fileSize,
+      mime_type: document.mimeType,
       verified: document.verified || false,
-      verifiedBy: document.verifiedBy || null,
-      verifiedAt: document.verifiedAt || null,
-      uploadedBy: document.uploadedBy || 'System',
+      verified_by: document.verifiedBy || null,
+      verified_at: document.verifiedAt || null,
+      uploaded_by: document.uploadedBy || 'System',
       status: document.status || 'PENDING',
-      createdAt: document.createdAt,
-      updatedAt: document.updatedAt
+      created_at: document.createdAt,
+      // Remove updatedAt as it may not exist in Supabase schema
     };
 
     await this.syncToTable('Documents', supabaseData, { uniqueField: 'id' });
@@ -163,16 +163,16 @@ export class UnifiedSupabaseSyncService {
   async syncShortlist(shortlist: any): Promise<void> {
     const supabaseData = {
       id: shortlist.id,
-      enquiryId: shortlist.enquiryId,
+      enquiry_id: shortlist.enquiryId,
       name: shortlist.name,
       mobile: shortlist.mobile,
-      businessName: shortlist.businessName,
-      businessType: shortlist.businessType,
-      loanAmount: shortlist.loanAmount,
-      interestStatus: shortlist.interestStatus || 'INTERESTED',
+      business_name: shortlist.businessName,
+      business_type: shortlist.businessType,
+      loan_amount: shortlist.loanAmount,
+      interest_status: shortlist.interestStatus || 'INTERESTED',
       staff: shortlist.staff || 'Auto-Assigned',
-      createdAt: shortlist.createdAt,
-      updatedAt: shortlist.updatedAt
+      created_at: shortlist.createdAt,
+      // Remove updatedAt as it may not exist in Supabase schema
     };
 
     await this.syncToTable('Shortlist', supabaseData, { uniqueField: 'mobile' });
@@ -190,11 +190,11 @@ export class UnifiedSupabaseSyncService {
       department: staff.department || null,
       position: staff.position || null,
       status: staff.status || 'ACTIVE',
-      hasAccess: staff.hasAccess || false,
+      has_access: staff.hasAccess || false,
       verified: staff.verified || false,
-      clientName: staff.clientName || null,
-      createdAt: staff.createdAt,
-      updatedAt: staff.updatedAt
+      client_name: staff.clientName || null,
+      created_at: staff.createdAt,
+      // Remove updatedAt as it may not exist in Supabase schema
     };
 
     // Try different table name variations to handle case sensitivity
@@ -247,14 +247,14 @@ export class UnifiedSupabaseSyncService {
       id: transaction.id,
       name: transaction.name,
       date: transaction.date,
-      transactionId: transaction.transactionId,
+      transaction_id: transaction.transactionId,
       amount: transaction.amount,
       status: transaction.status || 'PENDING',
-      createdAt: transaction.createdAt,
-      updatedAt: transaction.updatedAt
+      created_at: transaction.createdAt,
+      // Remove updatedAt as it may not exist in Supabase schema
     };
 
-    await this.syncToTable('Transactions', supabaseData, { uniqueField: 'transactionId' });
+    await this.syncToTable('Transactions', supabaseData, { uniqueField: 'transaction_id' });
   }
 
   /**
@@ -263,15 +263,15 @@ export class UnifiedSupabaseSyncService {
   async syncPaymentGateway(payment: any): Promise<void> {
     const supabaseData = {
       id: payment.id,
-      shortlistId: payment.shortlistId,
-      loanAmount: payment.loanAmount,
+      shortlist_id: payment.shortlistId,
+      loan_amount: payment.loanAmount,
       status: payment.status || 'PENDING',
-      clientName: payment.shortlist?.name || 'Unknown',
-      clientMobile: payment.shortlist?.mobile || null,
-      businessName: payment.shortlist?.businessName || null,
-      submittedBy: payment.submittedBy?.name || 'System',
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt
+      client_name: payment.shortlist?.name || 'Unknown',
+      client_mobile: payment.shortlist?.mobile || null,
+      business_name: payment.shortlist?.businessName || null,
+      submitted_by: payment.submittedBy?.name || 'System',
+      created_at: payment.createdAt,
+      // Remove updatedAt as it may not exist in Supabase schema
     };
 
     await this.syncToTable('PaymentGateway', supabaseData, { uniqueField: 'id' });

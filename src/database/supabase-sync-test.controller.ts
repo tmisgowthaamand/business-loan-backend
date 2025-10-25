@@ -17,6 +17,40 @@ export class SupabaseSyncTestController {
     private supabaseService: SupabaseService,
   ) {}
 
+  @Post('test-enquiry-sync')
+  async testEnquirySync() {
+    try {
+      console.log('🧪 [RENDER] Testing enquiry sync with fixed schema...');
+      
+      // Create a test enquiry
+      const testEnquiry = {
+        name: 'TEST SYNC USER',
+        mobile: '9999999999',
+        businessType: 'Testing',
+        businessName: 'Test Business',
+        loanAmount: 100000,
+        interestStatus: 'INTERESTED' as any // Use as any to bypass enum validation for test
+      };
+
+      // Create enquiry (this should trigger auto-sync)
+      const result = await this.enquiryService.create(testEnquiry, 1);
+      
+      return {
+        success: true,
+        message: 'Test enquiry created and sync attempted',
+        enquiryId: result.id,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ Test enquiry sync failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   @Get('status')
   async getSupabaseSyncStatus() {
     try {
