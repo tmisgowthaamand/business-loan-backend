@@ -7,6 +7,8 @@ import { EnquiryModule } from './enquiry/enquiry.module';
 import { DocumentModule } from './document/document.module';
 import { ShortlistModule } from './shortlist/shortlist.module';
 import { StaffModule } from './staff/staff.module';
+import { CashfreeModule } from './cashfree/cashfree.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { StaffModule } from './staff/staff.module';
     DocumentModule,
     ShortlistModule,
     StaffModule,
+    CashfreeModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
