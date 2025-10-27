@@ -18,6 +18,7 @@ async function bootstrap() {
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002',
+    'http://localhost:5001', // Frontend port 5001
     'http://localhost:5173',
     // Vercel production and preview deployments
     'https://business-loan-frontend.vercel.app',
@@ -59,7 +60,13 @@ async function bootstrap() {
       'Accept',
       'Authorization',
       'Cache-Control',
-      'X-CSRF-Token'
+      'X-CSRF-Token',
+      'x-request-time',
+      'X-Request-Time',
+      'X-Client-Fingerprint',
+      'X-Content-Type-Options',
+      'Pragma',
+      'Expires'
     ],
   });
 

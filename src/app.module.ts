@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
+import { AuthModule } from './auth/auth.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { EnquiryModule } from './enquiry/enquiry.module';
 import { DocumentModule } from './document/document.module';
@@ -9,12 +10,14 @@ import { ShortlistModule } from './shortlist/shortlist.module';
 import { StaffModule } from './staff/staff.module';
 import { CashfreeModule } from './cashfree/cashfree.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DataSyncModule } from './common/data-sync.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    AuthModule,
     SupabaseModule,
     EnquiryModule,
     DocumentModule,
@@ -22,6 +25,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     StaffModule,
     CashfreeModule,
     NotificationsModule,
+    DataSyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],
