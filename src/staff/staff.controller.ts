@@ -6,8 +6,8 @@ import { JwtGuard, RolesGuard } from '../auth/guard';
 import { Roles, GetUser } from '../auth/decorator';
 import { User } from '@prisma/client';
 
-@UseGuards(JwtGuard, RolesGuard)
-@Roles('ADMIN')
+// @UseGuards(JwtGuard, RolesGuard) // Temporarily disabled for demo
+// @Roles('ADMIN') // Temporarily disabled for demo
 @Controller('staff')
 export class StaffController {
   constructor(
