@@ -3,39 +3,34 @@ import { NotificationsService, Notification } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { GetUser } from '../auth/decorator';
 import { User } from '@prisma/client';
-// import { JwtGuard } from '../auth/guard';
+import { JwtGuard } from '../auth/guard';
 
+@UseGuards(JwtGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Post()
-  // @UseGuards(JwtGuard) // Temporarily disabled for demo
+  @UseGuards(JwtGuard)
   create(
     @Body() createNotificationDto: CreateNotificationDto,
-    @GetUser() user?: User,
+    @GetUser() user: User,
   ): Promise<{ message: string; notification: Notification }> {
-    const userId = user?.id || 1; // Demo user fallback
+    const userId = user.id;
     return this.notificationsService.create(createNotificationDto, userId);
   }
 
   @Get()
-  // @UseGuards(JwtGuard) // Temporarily disabled for demo
-  findAll(@GetUser() user?: User, @Query() query?: any): Promise<{ message: string; notifications: Notification[]; count: number }> {
-    console.log('🔔 Getting notifications for user:', user?.id || 1);
-    // For demo mode, use default user if no auth
-    const demoUser = user || { id: 1, role: 'ADMIN' } as User;
-    const result = this.notificationsService.findAll(demoUser, query || {});
-    console.log('🔔 Returning notifications result');
+  @UseGuards(JwtGuard)
+  findAll(@GetUser() user: User, @Query() query?: any): Promise<{ message: string; notifications: Notification[]; count: number }> {
+    const result = this.notificationsService.findAll(user, query || {});
     return result;
   }
 
   @Get('count')
-  // @UseGuards(JwtGuard) // Temporarily disabled for demo
-  getUnreadCount(@GetUser() user?: User): Promise<{ unreadCount: number }> {
-    console.log('🔔 Getting unread count for user:', user?.id || 1);
-    // For demo mode, use default user if no auth
-    const userId = user?.id || 1;
+  @UseGuards(JwtGuard)
+  getUnreadCount(@GetUser() user: User): Promise<{ unreadCount: number }> {
+    const userId = user.id;
     const result = this.notificationsService.getUnreadCount(userId);
     console.log('🔔 Returning unread count result');
     return result;
@@ -47,10 +42,9 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
-  // @UseGuards(JwtGuard) // Temporarily disabled for demo
-  markAsRead(@Param('id') id: string, @GetUser() user?: User): Promise<{ message: string; updated: boolean }> {
-    console.log('🔔 Marking notification as read:', id, 'for user:', user?.id || 1);
-    const userId = user?.id || 1;
+  markAsRead(@Param('id') id: string, @GetUser() user: User): Promise<{ message: string; updated: boolean }> {
+    console.log('🔔 Marking notification as read:', id, 'for user:', user.id);
+    const userId = user.id;
     return this.notificationsService.markAsRead(id, userId);
   }
 

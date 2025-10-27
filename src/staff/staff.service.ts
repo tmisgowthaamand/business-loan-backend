@@ -1358,26 +1358,21 @@ export class StaffService {
       return null;
     }
 
-    // Handle both plain text and hashed passwords for deployment compatibility
+    // Enforce secure password hashing - no plain text fallback in production
     let isPasswordValid = false;
     try {
-      // First try bcrypt comparison (for hashed passwords)
+      // Only use bcrypt comparison for security
       isPasswordValid = await bcrypt.compare(password, staff.password);
       
-      // If bcrypt fails, try plain text comparison (for development/fallback)
-      if (!isPasswordValid && staff.password === password) {
+      // In development only, allow plain text for initial setup
+      if (!isPasswordValid && process.env.NODE_ENV !== 'production' && staff.password === password) {
         isPasswordValid = true;
-        this.logger.log(`⚠️ Plain text password authentication used for ${email} (development mode)`);
+        this.logger.warn(`⚠️ SECURITY WARNING: Plain text password used in development for ${email}`);
+        this.logger.warn(`⚠️ This password should be hashed before production deployment`);
       }
     } catch (error) {
-      // If bcrypt fails, try plain text comparison as fallback
-      if (staff.password === password) {
-        isPasswordValid = true;
-        this.logger.log(`⚠️ Fallback to plain text password for ${email}`);
-      } else {
-        this.logger.error(`❌ Password comparison error for ${email}:`, error);
-        return null;
-      }
+      this.logger.error(`❌ Password comparison error for ${email}:`, error);
+      return null;
     }
     
     if (!isPasswordValid) {
@@ -1403,8 +1398,13 @@ export class StaffService {
       { expiresIn: '7d' }
     );
 
-    this.logger.log(`✅ [RENDER] Staff authenticated successfully: ${staff.email} (${staff.role})`);
-    this.logger.log(`🎉 [RENDER] Login successful - User: ${staff.name}, Role: ${staff.role}, Status: ${staff.status}`);
+    // Production-safe logging - no sensitive data in production
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(`✅ Staff authenticated successfully: ${staff.email} (${staff.role})`);
+      this.logger.log(`🎉 Login successful - User: ${staff.name}, Role: ${staff.role}, Status: ${staff.status}`);
+    } else {
+      this.logger.log(`✅ Staff authentication successful for user: ${staff.email.substring(0, 3)}***`);
+    }
     
     // Sync successful login to Supabase for Render deployment
     const isRender = process.env.RENDER === 'true';

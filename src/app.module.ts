@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { PrismaService } from './prisma/prisma.service';
 import { AppService } from './app.service';
 import { AppController } from './app.controller';
@@ -20,13 +22,32 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AutoSyncModule } from './database/auto-sync.module';
+import { PublicModule } from './public/public.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000, // 1 second
+        limit: 10, // 10 requests per second
+      },
+      {
+        name: 'medium',
+        ttl: 60000, // 60 seconds
+        limit: 100, // 100 requests per minute
+      },
+      {
+        name: 'long',
+        ttl: 900000, // 15 minutes
+        limit: 1000, // 1000 requests per 15 minutes
+      }
+    ]),
     CommonModule, // Add common module first for global services
+    PublicModule, // Public endpoints (no authentication required)
     HealthModule,
     MockModule,
     AuthModule,
@@ -45,6 +66,13 @@ import { AutoSyncModule } from './database/auto-sync.module';
     SupabaseModule, // Moved to end to avoid dependency issues
   ],
   controllers: [AppController],
-  providers: [PrismaService, AppService],
+  providers: [
+    PrismaService, 
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

@@ -1,8 +1,14 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
+import { validateEnvironment } from './config/environment.validation';
+import { SecurityInterceptor } from './common/interceptors/security.interceptor';
 
 async function bootstrap() {
+  // Validate environment variables first
+  validateEnvironment();
+
   console.log('🚀 Starting NestJS application...');
   const isProduction = process.env.NODE_ENV === 'production';
   const isRender = process.env.RENDER === 'true';
@@ -17,16 +23,43 @@ async function bootstrap() {
   });
   console.log('✅ NestJS application created successfully');
 
-  // Enhanced validation pipe for production
+  // Security middleware
+  if (isProduction) {
+    app.use(helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          mediaSrc: ["'self'"],
+          frameSrc: ["'none'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    }));
+  }
+
+  // Apply security interceptor globally
+  app.useGlobalInterceptors(new SecurityInterceptor());
+
+  // Enhanced validation pipe for production with security
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: false, // Allow additional properties but ignore them
+      forbidNonWhitelisted: true, // Reject unknown properties for security
       transform: true,
       transformOptions: {
-        enableImplicitConversion: true, // Better type conversion
+        enableImplicitConversion: true,
       },
-      disableErrorMessages: isProduction, // Hide detailed errors in production
+      disableErrorMessages: isProduction, // Hide validation errors in production
+      stopAtFirstError: true, // Stop at first validation error for performance
+      skipMissingProperties: false, // Validate all properties
+      skipNullProperties: false, // Validate null properties
+      skipUndefinedProperties: false, // Validate undefined properties
     }),
   );
 
@@ -77,10 +110,10 @@ async function bootstrap() {
         return callback(null, true);
       }
       
-      // In production, be more permissive to avoid blocking issues
+      // In production, be more restrictive for security
       if (isProduction) {
-        console.log('⚠️ CORS allowing origin in production mode:', origin);
-        return callback(null, true);
+        console.log('❌ CORS blocked unknown origin in production:', origin);
+        return callback(new Error('Not allowed by CORS'), false);
       }
       
       console.log('❌ CORS blocked origin:', origin);

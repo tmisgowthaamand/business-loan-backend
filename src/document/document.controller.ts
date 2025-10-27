@@ -20,7 +20,7 @@ import { JwtGuard } from '../auth/guard';
 import { GetUser } from '../auth/decorator';
 import { User } from '@prisma/client';
 
-// @UseGuards(JwtGuard) // Temporarily disabled for demo
+@UseGuards(JwtGuard)
 @Controller('documents')
 export class DocumentController {
   constructor(private readonly documentService: DocumentService) {}

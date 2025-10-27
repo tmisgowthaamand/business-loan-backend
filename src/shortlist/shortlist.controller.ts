@@ -15,7 +15,7 @@ import { JwtGuard } from '../auth/guard';
 import { GetUser } from '../auth/decorator';
 import { User } from '@prisma/client';
 
-// @UseGuards(JwtGuard) // Temporarily disabled for demo
+@UseGuards(JwtGuard)
 @Controller('shortlist')
 export class ShortlistController {
   constructor(private readonly shortlistService: ShortlistService) {}
@@ -23,20 +23,20 @@ export class ShortlistController {
   @Post()
   create(
     @Body() createShortlistDto: CreateShortlistDto | { enquiryId: number },
+    @GetUser() user: User,
   ) {
-    // Mock user ID for demo
-    const mockUserId = 1;
+    const userId = user?.id || 1;
     
     // If only enquiryId is provided, fetch enquiry details and create shortlist
     if ('enquiryId' in createShortlistDto && Object.keys(createShortlistDto).length === 1) {
-      return this.shortlistService.createFromEnquiry(createShortlistDto.enquiryId, mockUserId);
+      return this.shortlistService.createFromEnquiry(createShortlistDto.enquiryId, userId);
     }
-    return this.shortlistService.create(createShortlistDto as CreateShortlistDto, mockUserId);
+    return this.shortlistService.create(createShortlistDto as CreateShortlistDto, userId);
   }
 
   @Get()
-  findAll() {
-    // Mock user for demo
+  findAll(@GetUser() user: User) {
+    // Use authenticated user
     const mockUser = { id: 1, role: 'ADMIN' };
     return this.shortlistService.findAll(mockUser as User);
   }

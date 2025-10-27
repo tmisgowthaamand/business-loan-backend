@@ -1,8 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, Res, NotFoundException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StaffService } from './staff.service';
 import { CreateStaffDto, UpdateStaffDto, StaffRole } from './dto/staff.dto';
+import { JwtGuard, RolesGuard } from '../auth/guard';
+import { Roles, GetUser } from '../auth/decorator';
+import { User } from '@prisma/client';
 
+@UseGuards(JwtGuard, RolesGuard)
+@Roles('ADMIN')
 @Controller('staff')
 export class StaffController {
   constructor(
@@ -1047,9 +1052,10 @@ export class StaffController {
     try {
       console.log('🔄 Force reinitializing SMTP with new credentials');
       
-      // Force environment override
-      process.env.GMAIL_EMAIL = 'gokrishna98@gmail.com';
-      process.env.GMAIL_APP_PASSWORD = 'wwigqdrsiqarwiwz';
+      // SECURITY: Remove hardcoded credentials - use environment variables
+      if (!process.env.GMAIL_EMAIL || !process.env.GMAIL_APP_PASSWORD) {
+        throw new Error('Email credentials must be set via environment variables');
+      }
       
       const result = await this.staffService.testEmailConnection();
       return {
