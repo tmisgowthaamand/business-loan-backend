@@ -14,7 +14,7 @@ import { JwtGuard } from '../auth/guard';
 import { GetUser } from '../auth/decorator';
 import { User } from '@prisma/client';
 
-@UseGuards(JwtGuard)
+// @UseGuards(JwtGuard) // Temporarily disabled for demo
 @Controller('cashfree')
 export class CashfreeController {
   constructor(private readonly cashfreeService: CashfreeService) {

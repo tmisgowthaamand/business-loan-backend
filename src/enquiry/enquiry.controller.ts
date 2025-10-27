@@ -18,7 +18,7 @@ import { DocumentService } from '../document/document.service';
 import { ShortlistService } from '../shortlist/shortlist.service';
 import { StaffService } from '../staff/staff.service';
 import { CashfreeService } from '../cashfree/cashfree.service';
-@UseGuards(JwtGuard)
+// @UseGuards(JwtGuard) // Temporarily disabled for demo
 @Controller('enquiries')
 export class EnquiryController {
   constructor(
@@ -30,9 +30,9 @@ export class EnquiryController {
   ) {}
 
   @Post()
-  create(@Body() createEnquiryDto: CreateEnquiryDto, @GetUser() user: User) {
+  create(@Body() createEnquiryDto: CreateEnquiryDto, @GetUser() user?: User) {
     // For public applications (from /apply form), use a default staff ID or create without staff
-    const userId = user.id;
+    const userId = user?.id || 1; // Mock user ID for demo
     console.log('🚀 [DEPLOYMENT] Creating enquiry with auto-Supabase sync:', createEnquiryDto.name || createEnquiryDto.mobile);
     return this.enquiryService.create(createEnquiryDto, userId);
   }
