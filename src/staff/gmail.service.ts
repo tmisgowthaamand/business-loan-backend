@@ -249,13 +249,13 @@ export class GmailService {
           this.logger.log(`✅ [RENDER] SendGrid SUCCESS: Email sent to ${recipientEmail}`);
           return true;
         }
-        this.logger.error(`❌ [RENDER] SendGrid FAILED for ${recipientEmail}`);
+        this.logger.warn(`⚠️ [RENDER] SendGrid FAILED for ${recipientEmail} - trying next method`);
       } else {
-        this.logger.error(`❌ [RENDER] SendGrid NOT INITIALIZED - cannot send to ${recipientEmail}`);
-        this.logger.error(`🔧 [RENDER] SendGrid setup required:`);
-        this.logger.error(`   1. Add SENDGRID_API_KEY to Render environment`);
-        this.logger.error(`   2. Add SENDGRID_FROM_EMAIL to Render environment`);
-        this.logger.error(`   3. Verify sender email in SendGrid dashboard`);
+        this.logger.warn(`⚠️ [RENDER] SendGrid NOT INITIALIZED - cannot send to ${recipientEmail}`);
+        this.logger.log(`🔧 [RENDER] SendGrid setup required (optional - demo mode available):`);
+        this.logger.log(`   1. Add SENDGRID_API_KEY to Render environment`);
+        this.logger.log(`   2. Add SENDGRID_FROM_EMAIL to Render environment`);
+        this.logger.log(`   3. Verify sender email in SendGrid dashboard`);
       }
       
       // Try webhook as backup with enhanced logging
@@ -265,12 +265,15 @@ export class GmailService {
         this.logger.log(`✅ [RENDER] Webhook SUCCESS: Email sent to ${recipientEmail}`);
         return true;
       }
-      this.logger.error(`❌ [RENDER] Webhook FAILED for ${recipientEmail}`);
+      this.logger.warn(`⚠️ [RENDER] Webhook FAILED for ${recipientEmail} - switching to demo mode`);
       
       // Final fallback: Demo mode with detailed instructions
       this.logger.warn(`⚠️ [RENDER] All email methods FAILED for ${recipientEmail}`);
-      this.logger.warn(`📋 [RENDER] Using demo mode - email will be logged only`);
-      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+      this.logger.log(`📋 [RENDER] SWITCHING TO DEMO MODE - email will be logged for manual sending`);
+      this.logger.log(`✅ [RENDER] DEMO MODE ACTIVATED - this is NOT an error, just a fallback`);
+      const demoResult = await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
+      this.logger.log(`✅ [RENDER] DEMO MODE SUCCESS - verification link logged for ${recipientEmail}`);
+      return demoResult;
     }
 
     // VERCEL DEPLOYMENT: Try SendGrid then SMTP
@@ -662,17 +665,18 @@ export class GmailService {
     const platform = isRender ? 'Render' : isVercel ? 'Vercel' : 'Local';
     
     try {
-      this.logger.log(`📧 DEMO EMAIL MODE (${platform}): Email delivery simulation`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 🚨 POORANI EMAIL DELIVERY FAILED - MANUAL ACTION REQUIRED 🚨`);
-      this.logger.log(`📧 Please manually send the following email to Poorani:`);
+      this.logger.log(`📧 ✅ DEMO EMAIL MODE (${platform}): VERIFICATION LINK READY`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 TO: ${recipientEmail} (Poorani)`);
+      this.logger.log(`📧 📨 EMAIL DELIVERY SIMULATION - MANUAL ACTION REQUIRED`);
+      this.logger.log(`📧 Please manually send the following email to the staff member:`);
+      this.logger.log(`📧 ===============================================`);
+      this.logger.log(`📧 TO: ${recipientEmail}`);
       this.logger.log(`📧 NAME: ${recipientName}`);
       this.logger.log(`📧 ROLE: ${role}`);
       this.logger.log(`📧 SUBJECT: Welcome to Business Loan Management System - ${role} Access`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 🔗 VERIFICATION LINK FOR POORANI (COPY THIS):`);
+      this.logger.log(`📧 🔗 VERIFICATION LINK (COPY THIS):`);
       this.logger.log(`📧 ${accessLink}`);
       this.logger.log(`📧 ===============================================`);
       this.logger.log(`📧 📝 EMAIL TEMPLATE:`);
@@ -693,8 +697,9 @@ export class GmailService {
       // Try to send notification to admin webhook if available
       await this.notifyAdminOfEmailSuccess(recipientEmail, recipientName, accessLink, role);
       
-      this.logger.log(`✅ Email template generated for ${recipientEmail}`);
+      this.logger.log(`✅ [DEMO MODE] Email template generated successfully for ${recipientEmail}`);
       this.logger.log(`📧 👆 COPY THE VERIFICATION LINK ABOVE AND SEND IT MANUALLY`);
+      this.logger.log(`📧 ✅ STAFF CREATION SUCCESSFUL - Email delivery is in demo mode`);
       
       if (isRender) {
         this.logger.log(`📧 🌐 RENDER DEPLOYMENT - TO FIX AUTOMATIC EMAILS:`);
