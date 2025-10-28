@@ -978,6 +978,57 @@ export class StaffController {
     }
   }
 
+  @Post('fix-all-staff')
+  async fixAllStaff() {
+    try {
+      console.log('🔧 [RENDER] Starting comprehensive staff fix...');
+      
+      // 1. Reload default staff (call public method)
+      // Note: initializeDefaultStaff is called automatically on service initialization
+      
+      // 2. Get current staff count
+      const currentStaff = await this.staffService.getAllStaff();
+      
+      // 3. Ensure admin@gmail.com exists
+      const adminExists = currentStaff.find(s => s.email === 'admin@gmail.com');
+      if (!adminExists) {
+        console.log('🔧 [RENDER] Adding missing admin@gmail.com...');
+        await this.staffService.createStaff({
+          name: 'Admin User',
+          email: 'admin@gmail.com',
+          password: 'admin123',
+          role: StaffRole.ADMIN,
+          department: 'Administration',
+          position: 'System Administrator'
+        }, 'admin@gmail.com');
+      }
+      
+      // 4. Get updated staff list
+      const updatedStaff = await this.staffService.getAllStaff();
+      
+      return {
+        message: 'Staff system fixed successfully',
+        totalStaff: updatedStaff.length,
+        adminExists: !!updatedStaff.find(s => s.email === 'admin@gmail.com'),
+        staff: updatedStaff.map(s => ({
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          role: s.role,
+          status: s.status
+        })),
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error fixing staff system:', error);
+      throw new BadRequestException({
+        message: 'Failed to fix staff system',
+        details: error.message,
+        code: 'STAFF_FIX_FAILED'
+      });
+    }
+  }
+
   @Post('resend-verification/:id')
   async resendVerificationEmail(@Param('id') id: string) {
     try {

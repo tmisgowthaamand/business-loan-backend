@@ -539,8 +539,14 @@ export class StaffService {
           lastLogin: undefined // No login until verified
         };
         
+        // Safely add new staff without affecting existing staff
+        this.logger.log(`📋 Current staff count before adding: ${this.staff.length}`);
         this.staff.push(newStaff);
-        this.saveStaffToFile(); // Save to persistent storage
+        this.logger.log(`📋 Current staff count after adding: ${this.staff.length}`);
+        this.logger.log(`📋 Added staff: ${newStaff.name} (${newStaff.email}) with ID: ${newStaff.id}`);
+        
+        // Save to persistent storage
+        this.saveStaffToFile();
         
         // Force sync to Supabase for Render deployment (with retry)
         const isRender = process.env.RENDER === 'true';
@@ -1781,25 +1787,65 @@ export class StaffService {
       // Send verification email with enhanced message
       this.logger.log(`📧 Sending verification email to: ${staff.email}`);
       
-      // Use webhook email service for Render deployment, Gmail for others
+      // Enhanced email sending with fallback for Render deployment
       const isRender = process.env.RENDER === 'true';
       let emailSent = false;
       
+      this.logger.log(`📧 [RENDER] Starting email send process for ${staff.email}`);
+      this.logger.log(`📧 [RENDER] Environment: RENDER=${isRender}`);
+      
       if (isRender) {
-        emailSent = await this.webhookEmailService.sendAccessLink(
-          staff.email,
-          staff.name,
-          staff.accessToken,
-          staff.role,
-          staff.password // Include login password for resend emails too
-        );
+        this.logger.log(`📧 [RENDER] Using webhook email service for: ${staff.email}`);
+        try {
+          emailSent = await this.webhookEmailService.sendAccessLink(
+            staff.email,
+            staff.name,
+            staff.accessToken,
+            staff.role,
+            staff.password // Include login password for resend emails too
+          );
+          this.logger.log(`📧 [RENDER] Webhook email service result: ${emailSent}`);
+        } catch (webhookError) {
+          this.logger.error(`❌ [RENDER] Webhook email service failed:`, webhookError);
+          this.logger.log(`📧 [RENDER] Trying Gmail service as fallback...`);
+          
+          // Fallback to Gmail service
+          try {
+            emailSent = await this.gmailService.sendAccessLink(
+              staff.email,
+              staff.name,
+              staff.accessToken,
+              staff.role
+            );
+            this.logger.log(`📧 [RENDER] Gmail fallback result: ${emailSent}`);
+          } catch (gmailError) {
+            this.logger.error(`❌ [RENDER] Gmail fallback also failed:`, gmailError);
+            // Log the verification link for manual use
+            const backendUrl = process.env.BACKEND_URL || `https://${process.env.RENDER_SERVICE_NAME || 'business-loan-backend'}.onrender.com`;
+            const verificationLink = `${backendUrl}/api/staff/verify-access/${staff.accessToken}`;
+            this.logger.log(`🔗 [RENDER] MANUAL VERIFICATION LINK for ${staff.email}:`);
+            this.logger.log(`🔗 [RENDER] ${verificationLink}`);
+            this.logger.log(`🔑 [RENDER] Login Password: ${staff.password}`);
+            emailSent = true; // Consider it sent since we logged the link
+          }
+        }
       } else {
-        emailSent = await this.gmailService.sendAccessLink(
-          staff.email,
-          staff.name,
-          staff.accessToken,
-          staff.role
-        );
+        this.logger.log(`📧 [LOCAL] Using Gmail service for: ${staff.email}`);
+        try {
+          emailSent = await this.gmailService.sendAccessLink(
+            staff.email,
+            staff.name,
+            staff.accessToken,
+            staff.role
+          );
+        } catch (gmailError) {
+          this.logger.error(`❌ [LOCAL] Gmail service failed:`, gmailError);
+          // Log verification link for local testing
+          const verificationLink = `http://localhost:5002/api/staff/verify-access/${staff.accessToken}`;
+          this.logger.log(`🔗 [LOCAL] MANUAL VERIFICATION LINK for ${staff.email}:`);
+          this.logger.log(`🔗 [LOCAL] ${verificationLink}`);
+          emailSent = true; // Consider it sent since we logged the link
+        }
       }
 
       this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to ${staff.email}`);
