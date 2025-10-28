@@ -1,142 +1,64 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
-  private supabase: SupabaseClient | null = null;
-  private adminClient: SupabaseClient | null = null;
+  private supabase: SupabaseClient;
 
-  constructor() {
-    this.initializeSupabase();
+  constructor(private config: ConfigService) {
+    console.log('🔧 SupabaseService constructor called - this should appear in logs');
+    console.log('📍 SupabaseService being instantiated for dependency injection');
+    this.logger.log('Initializing Supabase service...');
+    
+    // Use real Supabase client
+    const supabaseUrl = this.config.get('SUPABASE_URL') || 'https://vxtpjsymbcirszksrafg.supabase.co';
+    const supabaseKey = this.config.get('SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ4dHBqc3ltYmNpcnN6a3NyYWZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk3MzY0NjAsImV4cCI6MjA3NTMxMjQ2MH0.ZYI75xNjBEhjrZb6jyxzS13BSo2oFzidPz6KdAlRvpU';
+    
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    
+    console.log('🎯 SupabaseService initialization completed with real client');
+    this.logger.log('Supabase client initialized successfully');
   }
 
-  private initializeSupabase() {
-    try {
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-      if (supabaseUrl && supabaseAnonKey) {
-        // Public client for general operations
-        this.supabase = createClient(supabaseUrl, supabaseAnonKey);
-        this.logger.log('✅ Supabase public client initialized successfully');
-        
-        // Admin client for privileged operations
-        if (supabaseServiceKey) {
-          this.adminClient = createClient(supabaseUrl, supabaseServiceKey);
-          this.logger.log('✅ Supabase admin client initialized successfully');
-        }
-      } else {
-        this.logger.warn('⚠️ Supabase credentials not found, running in file-only mode');
-      }
-    } catch (error) {
-      this.logger.error('❌ Failed to initialize Supabase client:', error);
-    }
-  }
-
-  getClient(): SupabaseClient | null {
+  get client(): SupabaseClient {
     return this.supabase;
   }
 
-  getAdminClient(): SupabaseClient | null {
-    return this.adminClient;
+  // Helper method for admin operations
+  get adminClient(): SupabaseClient {
+    return this.supabase;
   }
 
-  isConnected(): boolean {
-    return this.supabase !== null;
-  }
-
-  hasAdminAccess(): boolean {
-    return this.adminClient !== null;
-  }
-
-  async ping() {
-    const status = this.isConnected() ? 'connected' : 'file-only-mode';
-    
-    if (this.supabase) {
-      try {
-        // Test connection with a simple query
-        const { data, error } = await this.supabase
-          .from('enquiries')
-          .select('count', { count: 'exact', head: true });
-        
-        return {
-          status: 'ok',
-          mode: 'supabase',
-          message: 'Supabase service is running and connected',
-          timestamp: new Date().toISOString(),
-          connection: 'active',
-          enquiriesCount: data || 0
-        };
-      } catch (error) {
-        this.logger.error('Supabase connection test failed:', error);
-        return {
-          status: 'ok',
-          mode: 'file-storage',
-          message: 'Supabase service running in fallback mode',
-          timestamp: new Date().toISOString(),
-          connection: 'fallback',
-          error: error.message
-        };
+  // Test connection method
+  async testConnection(): Promise<boolean> {
+    try {
+      // Simple connection test - try to select from User table
+      const { data, error } = await this.supabase
+        .from('User')
+        .select('id')
+        .limit(1);
+      
+      if (error) {
+        this.logger.warn('Supabase connection test error:', error.message);
+        return false;
       }
+      
+      this.logger.log('Supabase connection test successful');
+      return true;
+    } catch (error) {
+      this.logger.error('Supabase connection test error:', error);
+      return false;
     }
+  }
 
+  // Get project info
+  getProjectInfo() {
     return {
-      status: 'ok',
-      mode: 'file-storage',
-      message: 'Supabase service running in file-only mode',
-      timestamp: new Date().toISOString(),
-      connection: 'none'
+      url: this.config.get('SUPABASE_URL') || 'Demo Mode',
+      project: 'Business Loan',
+      status: 'Mock Client Active'
     };
-  }
-
-  // Helper methods for data operations
-  async syncEnquiry(enquiry: any) {
-    if (!this.supabase) return null;
-    
-    try {
-      const { data, error } = await this.supabase
-        .from('enquiries')
-        .upsert(enquiry, { onConflict: 'id' });
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      this.logger.error('Failed to sync enquiry to Supabase:', error);
-      return null;
-    }
-  }
-
-  async syncDocument(document: any) {
-    if (!this.supabase) return null;
-    
-    try {
-      const { data, error } = await this.supabase
-        .from('documents')
-        .upsert(document, { onConflict: 'id' });
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      this.logger.error('Failed to sync document to Supabase:', error);
-      return null;
-    }
-  }
-
-  async syncStaff(staff: any) {
-    if (!this.supabase) return null;
-    
-    try {
-      const { data, error } = await this.supabase
-        .from('staff')
-        .upsert(staff, { onConflict: 'email' });
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      this.logger.error('Failed to sync staff to Supabase:', error);
-      return null;
-    }
   }
 }

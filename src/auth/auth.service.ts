@@ -1,189 +1,186 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
 import { StaffService } from '../staff/staff.service';
-import { SupabaseService } from '../supabase/supabase.service';
-
-export interface LoginDto {
-  email: string;
-  password: string;
-}
-
-export interface AuthResponse {
-  access_token: string;
-  user: {
-    id: number;
-    email: string;
-    name: string;
-    role: string;
-    department?: string;
-  };
-}
+import * as bcrypt from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
+import * as nodemailer from 'nodemailer';
+import { SignupDto, LoginDto } from './dto';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
-    private readonly jwtService: JwtService,
-    private readonly staffService: StaffService,
-    private readonly supabaseService: SupabaseService,
+    private prisma: PrismaService,
+    private jwt: JwtService,
+    private config: ConfigService,
+    private staffService: StaffService,
   ) {}
 
-  async login(loginDto: LoginDto): Promise<AuthResponse> {
-    const { email, password } = loginDto;
-
-    this.logger.log(`🔐 Login attempt for email: ${email}`);
+  async signup(dto: SignupDto) {
+    const hash = await bcrypt.hash(dto.password, 10);
 
     try {
-      // First try to authenticate with staff service
-      const staff = await this.staffService.authenticateStaff(email, password);
-      
-      if (staff) {
-        this.logger.log(`✅ Staff authentication successful for: ${email}`);
-        
-        const payload = {
-          sub: staff.id,
-          email: staff.email,
-          name: staff.name,
-          role: staff.role,
-          department: staff.department,
-        };
+      const user = await this.prisma.user.create({
+        data: {
+          name: dto.name,
+          email: dto.email,
+          passwordHash: hash,
+          role: dto.role as any,
+        },
+      });
 
-        const access_token = this.jwtService.sign(payload);
-
-        return {
-          access_token,
-          user: {
-            id: staff.id,
-            email: staff.email,
-            name: staff.name,
-            role: staff.role,
-            department: staff.department,
-          },
-        };
-      }
-
-      // If staff authentication fails, try Supabase
-      if (this.supabaseService.isConnected()) {
-        this.logger.log(`🔍 Trying Supabase authentication for: ${email}`);
-        
-        const supabase = this.supabaseService.getClient();
-        const { data: users, error } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('email', email)
-          .limit(1);
-
-        if (!error && users && users.length > 0) {
-          const user = users[0];
-          
-          // Verify password
-          const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-          
-          if (isPasswordValid && user.has_access && user.status === 'ACTIVE') {
-            this.logger.log(`✅ Supabase authentication successful for: ${email}`);
-            
-            const payload = {
-              sub: user.id,
-              email: user.email,
-              name: user.name,
-              role: user.role,
-              department: user.department,
-            };
-
-            const access_token = this.jwtService.sign(payload);
-
-            return {
-              access_token,
-              user: {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                role: user.role,
-                department: user.department,
-              },
-            };
-          }
-        }
-      }
-
-      this.logger.warn(`❌ Authentication failed for: ${email}`);
-      throw new UnauthorizedException('Invalid credentials');
-
+      return this.signToken(user.id, user.email, user.role);
     } catch (error) {
-      this.logger.error(`❌ Login error for ${email}:`, error.message);
+      if (error.code === 'P2002') {
+        throw new ForbiddenException('Email already exists');
+      }
+      throw error;
+    }
+  }
+
+  async login(dto: LoginDto) {
+    console.log('🔐 RENDER DEPLOYMENT - Auth service login called with:', dto.email);
+    console.log('🌍 Environment:', {
+      nodeEnv: process.env.NODE_ENV,
+      isVercel: process.env.VERCEL === '1',
+      isRender: process.env.RENDER === 'true'
+    });
+    
+    try {
+      // Use staff service to authenticate
+      console.log('🔍 Attempting staff authentication for:', dto.email);
+      const authResult = await this.staffService.authenticateStaff(dto.email, dto.password);
       
-      if (error instanceof UnauthorizedException) {
+      if (!authResult) {
+        console.log('❌ Invalid credentials for:', dto.email);
+        console.log('🔍 Available staff emails:', await this.getAvailableStaffEmails());
+        throw new ForbiddenException('Invalid credentials. Please check your email and password.');
+      }
+
+      console.log('✅ Staff authenticated successfully:', authResult.staff.name, '- Ready for Render deployment');
+      
+      // Return the auth token and user data in the expected format
+      const response = {
+        access_token: authResult.authToken,
+        user: {
+          id: authResult.staff.id,
+          name: authResult.staff.name,
+          email: authResult.staff.email,
+          role: authResult.staff.role,
+          department: authResult.staff.department,
+          status: authResult.staff.status
+        }
+      };
+      
+      console.log('🚀 RENDER DEPLOYMENT - Login successful:', {
+        user: response.user.name,
+        role: response.user.role,
+        department: response.user.department,
+        hasToken: !!response.access_token,
+        tokenLength: response.access_token?.length || 0
+      });
+      
+      return response;
+    } catch (error) {
+      console.error('❌ RENDER DEPLOYMENT - Login error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        email: dto.email
+      });
+      
+      // Enhanced error handling for deployments
+      if (error instanceof ForbiddenException) {
         throw error;
       }
       
-      throw new UnauthorizedException('Authentication failed');
+      throw new ForbiddenException('Authentication failed. Please try again.');
     }
   }
 
-  async validateUser(payload: any) {
-    this.logger.log(`🔍 Validating JWT payload for user: ${payload.email}`);
-    
+  private async getAvailableStaffEmails(): Promise<string[]> {
     try {
-      // Try to get user from staff service first
-      const staff = await this.staffService.findByEmail(payload.email);
-      
-      if (staff && staff.hasAccess && staff.status === 'ACTIVE') {
-        return {
-          id: staff.id,
-          email: staff.email,
-          name: staff.name,
-          role: staff.role,
-          department: staff.department,
-        };
-      }
-
-      // If not found in staff service, try Supabase
-      if (this.supabaseService.isConnected()) {
-        const supabase = this.supabaseService.getClient();
-        const { data: users, error } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('email', payload.email)
-          .eq('has_access', true)
-          .eq('status', 'ACTIVE')
-          .limit(1);
-
-        if (!error && users && users.length > 0) {
-          const user = users[0];
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            department: user.department,
-          };
-        }
-      }
-
-      this.logger.warn(`❌ User validation failed for: ${payload.email}`);
-      return null;
-
+      const allStaff = await this.staffService.getAllStaff();
+      return allStaff.map(staff => staff.email);
     } catch (error) {
-      this.logger.error(`❌ User validation error:`, error.message);
-      return null;
+      console.log('Could not get staff emails:', error);
+      return [];
     }
   }
 
-  async verifyToken(token: string) {
+  async sendInvite(email: string) {
+    const token = this.jwt.sign({ email }, { expiresIn: '1h' });
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: this.config.get('GMAIL_USER'),
+        pass: this.config.get('GMAIL_APP_PASSWORD'),
+      },
+    });
+
+    await transporter.sendMail({
+      from: this.config.get('GMAIL_USER'),
+      to: email,
+      subject: 'Invitation to Business Loan System',
+      text: `Click to access: http://localhost:3000/auth/verify/${token}`,
+    });
+
+    await this.prisma.user.upsert({
+      where: { email },
+      update: {
+        inviteToken: token,
+        tokenExpiry: new Date(Date.now() + 3600000),
+      },
+      create: {
+        name: 'Invited User',
+        email,
+        role: 'EMPLOYEE',
+        inviteToken: token,
+        tokenExpiry: new Date(Date.now() + 3600000),
+      },
+    });
+
+    return { message: 'Invite sent' };
+  }
+
+  async verifyInvite(token: string) {
     try {
-      const payload = this.jwtService.verify(token);
-      const user = await this.validateUser(payload);
-      
-      if (user) {
-        return { valid: true, user };
+      const payload = this.jwt.verify(token);
+      const user = await this.prisma.user.findUnique({
+        where: { email: payload.email },
+      });
+
+      if (
+        !user ||
+        user.inviteToken !== token ||
+        user.tokenExpiry < new Date()
+      ) {
+        throw new Error();
       }
-      
-      return { valid: false, user: null };
-    } catch (error) {
-      this.logger.error('❌ Token verification failed:', error.message);
-      return { valid: false, user: null };
+
+      await this.prisma.user.update({
+        where: { email: payload.email },
+        data: { inviteToken: null, tokenExpiry: null },
+      });
+
+      return this.signToken(user.id, user.email, user.role);
+    } catch {
+      throw new ForbiddenException('Invalid or expired token');
     }
+  }
+
+  async signToken(
+    userId: number,
+    email: string,
+    role: string,
+  ): Promise<{ access_token: string; user: any }> {
+    const payload = { sub: userId, email, role };
+    const token = await this.jwt.signAsync(payload);
+
+    return {
+      access_token: token,
+      user: { id: userId, email, role },
+    };
   }
 }

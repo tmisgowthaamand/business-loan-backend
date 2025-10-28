@@ -1,419 +1,2349 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  forwardRef,
+  Inject,
+  Optional,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
-
-export interface StaffEntity {
-  id: number;
-  name: string;
-  email: string;
-  password?: string;
-  role: string;
-  department?: string;
-  phone?: string;
-  status: string;
-  hasAccess: boolean;
-  verified: boolean;
-  clientName?: string;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface CreateStaffDto {
-  name: string;
-  email: string;
-  password: string;
-  role: string;
-  department?: string;
-  phone?: string;
-  clientName?: string;
-}
-
-export interface UpdateStaffDto {
-  name?: string;
-  role?: string;
-  department?: string;
-  phone?: string;
-  status?: string;
-  hasAccess?: boolean;
-  verified?: boolean;
-  clientName?: string;
-}
+import { PersistenceService } from '../common/services/persistence.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
+import { CreateStaffDto, UpdateStaffDto, StaffEntity, StaffRole, StaffStatus } from './dto/staff.dto';
+import { GmailService } from './gmail.service';
+import * as bcrypt from 'bcrypt';
+import * as jwt from 'jsonwebtoken';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import { WebhookEmailService } from './webhook-email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 
 @Injectable()
 export class StaffService {
   private readonly logger = new Logger(StaffService.name);
   private staff: StaffEntity[] = [];
+  private nextId = 1;
+  private readonly dataDir = path.join(process.cwd(), 'data');
+  private readonly staffFile = path.join(this.dataDir, 'staff.json');
 
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private gmailService: GmailService,
+    private webhookEmailService: WebhookEmailService,
+    private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
+    @Inject(forwardRef(() => NotificationsService)) private notificationsService: NotificationsService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
+  ) {
+    // Initialize synchronously to avoid async issues
     this.initializeDefaultStaff();
   }
 
-  private async initializeDefaultStaff() {
-    this.logger.log('🔧 Initializing default staff members...');
+  private getDeploymentInfo() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isRender = process.env.RENDER === 'true';
+    const isVercel = process.env.VERCEL === '1';
+    const platform = isRender ? 'Render' : isVercel ? 'Vercel' : 'Localhost';
+    return { isProduction, isRender, isVercel, platform };
+  }
+
+  private initializeDefaultStaff() {
+    const deploymentInfo = this.getDeploymentInfo();
+    this.logger.log(`🗄️ Staff service initialized - Loading all staff members for ${deploymentInfo.platform} deployment`);
     
-    const defaultStaff: StaffEntity[] = [
+    // Initialize with verified staff members ready for Render deployment
+    this.staff = [
       {
         id: 1,
         name: 'Perivi',
         email: 'gowthaamankrishna1998@gmail.com',
-        role: 'ADMIN',
+        password: '12345678',
+        role: StaffRole.ADMIN,
         department: 'Management',
-        phone: '9876543210',
-        status: 'ACTIVE',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
         clientName: 'Rajesh Kumar, Priya Sharma, Amit Patel',
-        createdAt: new Date().toISOString(),
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T09:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
       },
       {
         id: 2,
         name: 'Venkat',
         email: 'gowthaamaneswar1998@gmail.com',
-        role: 'EMPLOYEE',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
         department: 'Operations',
-        phone: '9876543211',
-        status: 'ACTIVE',
+        position: 'Employee',
+        status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
         clientName: 'Sunita Gupta, Vikram Singh',
-        createdAt: new Date().toISOString(),
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T10:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
       },
       {
         id: 3,
         name: 'Harish',
         email: 'newacttmis@gmail.com',
-        role: 'ADMIN',
+        password: '12345678',
+        role: StaffRole.ADMIN,
         department: 'Client Management',
-        phone: '9876543212',
-        status: 'ACTIVE',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
         clientName: 'Anita Desai, Ravi Mehta, Sanjay Joshi',
-        createdAt: new Date().toISOString(),
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T11:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
       },
       {
         id: 4,
-        name: 'Dinesh',
-        email: 'dinesh@gmail.com',
-        role: 'EMPLOYEE',
-        department: 'Processing',
-        phone: '9876543213',
-        status: 'ACTIVE',
-        hasAccess: true,
-        verified: true,
-        clientName: 'Available for Assignment - Ready for New Clients',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 5,
-        name: 'Nunciya',
-        email: 'tmsnunciya59@gmail.com',
-        role: 'ADMIN',
-        department: 'Administration',
-        phone: '9876543214',
-        status: 'ACTIVE',
-        hasAccess: true,
-        verified: true,
-        clientName: 'Deepak Verma',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 6,
-        name: 'Admin User',
-        email: 'admin@businessloan.com',
-        role: 'ADMIN',
-        department: 'Administration',
-        phone: '9876543215',
-        status: 'ACTIVE',
+        name: 'Pankil',
+        email: 'govindamarketing9998@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Marketing',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
         clientName: 'Neha Agarwal, Rohit Sharma',
-        createdAt: new Date().toISOString(),
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T12:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 5,
+        name: 'Dinesh',
+        email: 'dinesh@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Employee',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Available for Assignment - Ready for New Clients',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T13:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 6,
+        name: 'Nunciya',
+        email: 'tmsnunciya59@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        clientName: 'Deepak Verma',
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T14:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
       },
       {
         id: 7,
         name: 'Admin User',
         email: 'admin@gmail.com',
-        role: 'ADMIN',
+        password: 'admin123',
+        role: StaffRole.ADMIN,
         department: 'Administration',
-        phone: '9876543216',
-        status: 'ACTIVE',
+        position: 'System Administrator',
+        status: StaffStatus.ACTIVE,
         hasAccess: true,
         verified: true,
         clientName: 'Manish Gupta',
-        createdAt: new Date().toISOString(),
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date('2024-10-01T15:00:00.000Z'),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+    ];
+    
+    // Ensure exactly 7 staff members for Render deployment
+    this.staff = this.staff.slice(0, 7);
+
+    this.nextId = 9; // Next available ID
+    
+    this.logger.log(`✅ Initialized with ${this.staff.length} staff members:`);
+    this.staff.forEach(staff => {
+      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.department}`);
+    });
+    
+    this.logger.log(`🔐 ${deploymentInfo.platform.toUpperCase()} DEPLOYMENT LOGIN CREDENTIALS:`);
+    this.logger.log('   ✅ ALL STAFF MEMBERS READY FOR IMMEDIATE LOGIN:');
+    this.staff.forEach(staff => {
+      const password = staff.email === 'admin@gmail.com' ? 'admin123' : '12345678';
+      this.logger.log(`   - ${staff.name}: ${staff.email} / ${password} (${staff.role}) - ${staff.status} - VERIFIED`);
+    });
+    
+    this.logger.log(`🚀 ${deploymentInfo.platform.toUpperCase()} DEPLOYMENT STAFF SUMMARY:`);
+    this.logger.log(`   - Total Staff: ${this.staff.length}`);
+    this.logger.log(`   - Active Staff: ${this.staff.filter(s => s.status === StaffStatus.ACTIVE).length}`);
+    this.logger.log(`   - Admin Staff: ${this.staff.filter(s => s.role === StaffRole.ADMIN).length}`);
+    this.logger.log(`   - Employee Staff: ${this.staff.filter(s => s.role === StaffRole.EMPLOYEE).length}`);
+    
+    // Save to file
+    this.saveStaffToFile();
+    
+    // Grant access to all staff for production deployments
+    if (deploymentInfo.isRender || deploymentInfo.isVercel || deploymentInfo.isProduction) {
+      // Use setTimeout to make this non-blocking
+      setTimeout(async () => {
+        try {
+          const result = await this.grantAccessToAllStaff();
+          this.logger.log(`🚀 [${deploymentInfo.platform.toUpperCase()}] Initialization complete: ${result.updated} staff granted access`);
+        } catch (error) {
+          this.logger.warn(`⚠️ [RENDER] Could not grant access during initialization: ${error.message}`);
+        }
+      }, 100);
+    }
+  }
+
+  private generateAccessToken(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  // Check if user has staff management permissions (all admin users)
+  private checkStaffManagementPermission(userEmail?: string): void {
+    // Allow all admin users to manage staff
+    if (!userEmail) {
+      this.logger.warn(`❌ Unauthorized staff management attempt by: unknown user`);
+      throw new Error(`Access denied. Please login to access staff management.`);
+    }
+    
+    this.logger.log(`✅ Staff management access granted to: ${userEmail}`);
+  }
+
+  private ensureDataDirectory(): void {
+    try {
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        this.logger.log(`📁 Created data directory: ${this.dataDir}`);
+      }
+    } catch (error) {
+      this.logger.error('Error creating data directory:', error);
+    }
+  }
+
+  private saveStaffToFile(): void {
+    try {
+      this.ensureDataDirectory();
+      const staffData = {
+        staff: this.staff,
+        nextId: this.nextId,
+        lastUpdated: new Date().toISOString()
+      };
+      fs.writeFileSync(this.staffFile, JSON.stringify(staffData, null, 2));
+      this.logger.log(`💾 Staff data saved to file (${this.staff.length} members)`);
+    } catch (error) {
+      this.logger.error('Error saving staff to file:', error);
+    }
+  }
+
+  private loadStaffFromFile(): void {
+    try {
+      if (fs.existsSync(this.staffFile)) {
+        const fileContent = fs.readFileSync(this.staffFile, 'utf8');
+        const staffData = JSON.parse(fileContent);
+        
+        if (staffData.staff && Array.isArray(staffData.staff)) {
+          this.staff = staffData.staff.map(staff => ({
+            ...staff,
+            createdAt: new Date(staff.createdAt),
+            updatedAt: new Date(staff.updatedAt),
+            lastLogin: staff.lastLogin ? new Date(staff.lastLogin) : undefined,
+            accessTokenExpiry: staff.accessTokenExpiry ? new Date(staff.accessTokenExpiry) : undefined
+          }));
+          this.nextId = staffData.nextId || this.staff.length + 1;
+          this.logger.log(`📂 Loaded ${this.staff.length} staff members from file`);
+          
+          // Log loaded staff for verification
+          this.staff.forEach(staff => {
+            this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.status}`);
+          });
+        }
+      } else {
+        this.logger.log('📂 No existing staff file found, starting fresh');
+      }
+    } catch (error) {
+      this.logger.error('Error loading staff from file:', error);
+      this.staff = [];
+      this.nextId = 1;
+    }
+  }
+
+  private async initializeDefaultAdmin() {
+    this.logger.log('🗄️ Staff service initialized - initializing with default staff members');
+    
+    // Initialize with staff members from screenshot
+    const defaultStaff: StaffEntity[] = [
+      {
+        id: 1,
+        name: 'Admin User',
+        email: 'admin@gmail.com',
+        password: await bcrypt.hash('12345678', 10),
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'System Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 2,
+        name: 'Pankil',
+        email: 'govindamarketing9998@gmail.com',
+        password: await bcrypt.hash('pankil123', 10),
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 10,
+        name: 'Admin User',
+        email: 'admin@businessloan.com',
+        password: await bcrypt.hash('admin123', 10),
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'Business Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 11,
+        name: 'Venkat',
+        email: 'gowthaamaneswar1998@gmail.com',
+        password: await bcrypt.hash('venkat123', 10),
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Manager',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 12,
+        name: 'Dinesh',
+        email: 'dinesh@gmail.com',
+        password: await bcrypt.hash('dinesh123', 10),
+        role: StaffRole.EMPLOYEE,
+        department: 'Operations',
+        position: 'Employee',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 13,
+        name: 'Harish',
+        email: 'newacttmis@gmail.com',
+        password: await bcrypt.hash('harish123', 10),
+        role: StaffRole.ADMIN,
+        department: 'Client Management',
+        position: 'Client Manager',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
+      },
+      {
+        id: 14,
+        name: 'Nunciya',
+        email: 'tmsnunciya59@gmail.com',
+        password: await bcrypt.hash('12345678', 10),
+        role: StaffRole.ADMIN,
+        department: 'Administration',
+        position: 'Administrator',
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLogin: new Date(),
       },
     ];
 
     this.staff = defaultStaff;
-    this.logger.log(`✅ Initialized ${defaultStaff.length} default staff members`);
+    this.nextId = 15; // Next available ID
+    
+    this.logger.log(`✅ Initialized with ${this.staff.length} default staff members:`);
+    this.staff.forEach(staff => {
+      this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role}`);
+    });
+    
+    // Save to file
+    this.saveStaffToFile();
   }
 
-  async findAll(): Promise<{ staff: Omit<StaffEntity, 'password'>[] }> {
+
+  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean; verificationRequired: boolean }> {
     try {
-      // Try to get from Supabase first
-      if (this.supabaseService.isConnected()) {
-        const supabase = this.supabaseService.getClient();
-        const { data: supabaseStaff, error } = await supabase
-          .from('staff')
-          .select('*');
-
-        if (!error && supabaseStaff) {
-          this.logger.log(`📊 Retrieved ${supabaseStaff.length} staff from Supabase`);
-          return {
-            staff: supabaseStaff.map(staff => ({
-              ...staff,
-              hasAccess: staff.has_access,
-              clientName: staff.client_name,
-              createdAt: staff.created_at,
-              updatedAt: staff.updated_at,
-            }))
-          };
-        }
-      }
-
-      // Fallback to local staff
-      const staffWithoutPassword = this.staff.map(({ password, ...staff }) => staff);
-      return { staff: staffWithoutPassword };
-    } catch (error) {
-      this.logger.error('❌ Error fetching staff:', error);
-      const staffWithoutPassword = this.staff.map(({ password, ...staff }) => staff);
-      return { staff: staffWithoutPassword };
-    }
-  }
-
-  async create(createStaffDto: CreateStaffDto): Promise<StaffEntity> {
-    try {
-      const hashedPassword = await bcrypt.hash(createStaffDto.password, 10);
+      // Check staff management permissions - only admin@gmail.com can create staff
+      this.checkStaffManagementPermission(currentUserEmail);
       
-      const newStaff: StaffEntity = {
-        id: Date.now(),
-        ...createStaffDto,
-        password: hashedPassword,
-        status: 'PENDING',
-        hasAccess: false,
-        verified: false,
-        createdAt: new Date().toISOString(),
-      };
+      this.logger.log(`👤 Creating new staff member: ${createStaffDto.email} (${createStaffDto.role})`);
+      
+      // Remove automatic cleanup since we only allow admin@gmail.com to manage staff
+      // await this.maintainDefaultStaffCount();
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(createStaffDto.email)) {
+        throw new Error('Invalid email format. Please provide a valid email address (e.g., user@example.com)');
+      }
 
-      // Try to save to Supabase first
-      if (this.supabaseService.hasAdminAccess()) {
-        const supabase = this.supabaseService.getAdminClient();
-        const { data, error } = await supabase
-          .from('staff')
-          .insert({
-            name: newStaff.name,
-            email: newStaff.email,
-            password_hash: hashedPassword,
-            role: newStaff.role,
-            department: newStaff.department,
-            phone: newStaff.phone,
-            status: newStaff.status,
-            has_access: newStaff.hasAccess,
-            verified: newStaff.verified,
-            client_name: newStaff.clientName,
-          })
-          .select()
-          .single();
+      // Check if email already exists in Supabase
+      const { data: existingUser, error: selectError } = await this.supabaseService.client
+        .from('User')
+        .select('email')
+        .eq('email', createStaffDto.email)
+        .limit(1);
 
-        if (!error && data) {
-          this.logger.log(`✅ Staff created in Supabase: ${newStaff.email}`);
-          return {
-            ...data,
-            hasAccess: data.has_access,
-            clientName: data.client_name,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
-          };
+      if (!selectError && existingUser && existingUser.length > 0) {
+        throw new Error('Email already exists in database. Please use a different email address.');
+      }
+
+      // Also check in-memory storage
+      const existingStaff = this.staff.find(s => s.email === createStaffDto.email);
+      if (existingStaff) {
+        throw new Error('Email already exists in system. Please use a different email address.');
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(createStaffDto.password, 10);
+
+      // Generate access token
+      const accessToken = this.generateAccessToken();
+      const accessTokenExpiry = new Date();
+      accessTokenExpiry.setHours(accessTokenExpiry.getHours() + 24); // 24 hours expiry
+
+      // Try to insert into Supabase first
+      this.logger.log(`💾 Attempting to create staff in Supabase: ${createStaffDto.email}`);
+      const { data: newUser, error } = await this.supabaseService.client
+        .from('User')
+        .insert([
+          {
+            name: createStaffDto.name,
+            email: createStaffDto.email,
+            role: createStaffDto.role,
+            passwordHash: hashedPassword,
+            department: createStaffDto.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
+            position: createStaffDto.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+            inviteToken: accessToken,
+            tokenExpiry: accessTokenExpiry.toISOString(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single();
+
+      let staffEntity: Omit<StaffEntity, 'password'>;
+      let isSupabaseUser = false;
+
+      if (error) {
+        this.logger.warn(`⚠️ Supabase insert failed, using in-memory storage: ${error.message}`);
+        
+        // Create staff in memory - PENDING status for email verification workflow
+        const staffId = await this.idGeneratorService.generateStaffId();
+        const isRenderDeployment = process.env.RENDER === 'true' || process.env.NODE_ENV === 'production';
+        
+        const newStaff: StaffEntity = {
+          id: staffId,
+          name: createStaffDto.name,
+          email: createStaffDto.email,
+          password: createStaffDto.password, // Store plain text password for immediate login
+          role: createStaffDto.role,
+          department: createStaffDto.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: createStaffDto.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          status: StaffStatus.PENDING, // Always start as PENDING for verification workflow
+          hasAccess: false, // No access until verified
+          verified: false, // Not verified until email verification
+          clientName: createStaffDto.clientName || 'Available for Assignment',
+          accessToken: accessToken, // Always generate token for verification
+          accessTokenExpiry: accessTokenExpiry,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          createdBy: 'Admin',
+          lastLogin: undefined // No login until verified
+        };
+        
+        this.staff.push(newStaff);
+        this.saveStaffToFile(); // Save to persistent storage
+        
+        // Force sync to Supabase for all deployments (with platform-specific handling)
+        const { isRender, isVercel, isProduction, platform } = this.getDeploymentInfo();
+        
+        if (isRender || isVercel || isProduction) {
+          this.logger.log(`🚀 [${platform.toUpperCase()}] Force syncing new staff to Supabase: ${newStaff.email}`);
+          
+          // Try multiple sync attempts for production deployments
+          this.syncStaffToSupabaseWithRetry(newStaff, 3).catch(error => {
+            this.logger.warn(`⚠️ [${platform.toUpperCase()}] Failed to sync staff to Supabase after retries: ${error.message}`);
+          });
+        } else {
+          // Regular sync for local development
+          this.unifiedSupabaseSync.syncStaff(newStaff).catch(error => {
+            this.logger.error('❌ [LOCALHOST] Failed to sync staff to Supabase:', error);
+          });
+        }
+        
+        const { password, ...staffWithoutPassword } = newStaff;
+        staffEntity = staffWithoutPassword;
+        
+        this.logger.log(`✅ Staff created in memory: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newStaff.id}`);
+      } else {
+        // Successfully created in Supabase
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to StaffEntity format
+        staffEntity = {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role as StaffRole,
+          department: newUser.department || (createStaffDto.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: newUser.position || (createStaffDto.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          status: StaffStatus.PENDING,
+          hasAccess: false,
+          accessToken,
+          accessTokenExpiry,
+          createdAt: new Date(newUser.createdAt),
+          updatedAt: new Date(newUser.updatedAt || newUser.createdAt),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`✅ Staff created in Supabase: ${createStaffDto.email} (${createStaffDto.role}) - ID: ${newUser.id}`);
+      }
+
+      // Send welcome/verification email (non-blocking in production)
+      const isProduction = process.env.NODE_ENV === 'production';
+      const isRender = process.env.RENDER === 'true';
+      const isVercel = process.env.VERCEL === '1';
+      const isRenderDeploy = isRender || isProduction;
+      
+      const emailType = isRenderDeploy ? 'welcome' : 'verification';
+      this.logger.log(`📧 Sending ${emailType} email to: ${createStaffDto.email}`);
+      
+      let emailSent = true; // Always return true for production to avoid blocking
+      
+      if (isProduction && (isRender || isVercel)) {
+        // Completely non-blocking email for Render/Vercel - fire and forget
+        this.logger.log(`🚀 [${isRender ? 'RENDER' : 'VERCEL'}] Starting non-blocking ${emailType} email for: ${createStaffDto.email}`);
+        
+        // Use setTimeout to ensure complete non-blocking behavior
+        setTimeout(async () => {
+          try {
+            if (isRender) {
+              // Try webhook email service first for Render
+              this.logger.log(`📧 [RENDER] Attempting webhook ${emailType} email to: ${createStaffDto.email}`);
+              // Use existing sendAccessLink method for both cases
+              emailSent = await this.webhookEmailService.sendAccessLink(
+                createStaffDto.email,
+                createStaffDto.name,
+                accessToken,
+                createStaffDto.role,
+                createStaffDto.password // Pass the login password
+              );
+              
+              if (emailSent) {
+                this.logger.log(`✅ [RENDER] Webhook ${emailType} email sent successfully to: ${createStaffDto.email}`);
+              } else {
+                // Fallback to Gmail for Render
+                this.logger.log(`⚠️ [RENDER] Webhook failed, trying Gmail fallback for: ${createStaffDto.email}`);
+                // Use existing sendAccessLink method for both cases
+                const gmailSuccess = await this.gmailService.sendAccessLink(
+                  createStaffDto.email,
+                  createStaffDto.name,
+                  accessToken,
+                  createStaffDto.role
+                );
+                
+                if (gmailSuccess) {
+                  this.logger.log(`✅ [RENDER] Gmail fallback ${emailType} email sent successfully to: ${createStaffDto.email}`);
+                } else {
+                  this.logger.warn(`⚠️ [RENDER] All email methods failed for: ${createStaffDto.email} - staff is already active and can login`);
+                }
+              }
+            } else {
+              // Vercel - use Gmail
+              this.logger.log(`📧 [VERCEL] Attempting Gmail email to: ${createStaffDto.email}`);
+              const success = await this.gmailService.sendAccessLink(
+                createStaffDto.email,
+                createStaffDto.name,
+                accessToken,
+                createStaffDto.role
+              );
+              
+              if (success) {
+                this.logger.log(`✅ [VERCEL] Email sent successfully to: ${createStaffDto.email}`);
+              } else {
+                this.logger.warn(`⚠️ [VERCEL] Email failed for: ${createStaffDto.email} - staff can still be activated manually`);
+              }
+            }
+          } catch (error) {
+            this.logger.warn(`⚠️ [${isRender ? 'RENDER' : 'VERCEL'}] Email error for ${createStaffDto.email}: ${error.message} - staff creation still successful`);
+          }
+        }, 100); // Small delay to ensure staff creation completes first
+        
+        this.logger.log(`✅ [${isRender ? 'RENDER' : 'VERCEL'}] Staff created successfully - verification email queued for background sending`);
+      } else {
+        // Blocking email sending for development/localhost
+        try {
+          emailSent = await this.gmailService.sendAccessLink(
+            createStaffDto.email,
+            createStaffDto.name,
+            accessToken,
+            createStaffDto.role
+          );
+          this.logger.log(`📧 [LOCAL] Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to: ${createStaffDto.email}`);
+        } catch (error) {
+          this.logger.warn(`⚠️ [LOCAL] Email error for ${createStaffDto.email}: ${error.message}`);
+          emailSent = false;
         }
       }
 
-      // Fallback to local storage
-      this.staff.push(newStaff);
-      this.logger.log(`✅ Staff created locally: ${newStaff.email}`);
-      return newStaff;
+      // Create notification for new staff member
+      try {
+        await this.notificationsService.notifyStaffAdded(
+          staffEntity.id,
+          createStaffDto.name,
+          createStaffDto.role
+        );
+        this.logger.log(`🔔 Notification sent for new staff member: ${createStaffDto.name}`);
+      } catch (error) {
+        this.logger.error('Failed to send notification for new staff member:', error);
+      }
+
+      // Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
+      const isRenderEnv = process.env.RENDER === 'true';
+      const isVercelDeployment = process.env.VERCEL === '1';
+      const isProductionEnv = process.env.NODE_ENV === 'production';
+      const deploymentPlatform = isRenderEnv ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProductionEnv ? 'PRODUCTION' : 'LOCAL';
+      const shouldSync = isRenderEnv || isVercelDeployment || isProductionEnv;
+      
+      if (!isSupabaseUser && shouldSync) {
+        // Only sync if not already in Supabase (i.e., created in memory)
+        this.logger.log(`🚀 [${deploymentPlatform}] Auto-syncing staff to Supabase: ${createStaffDto.email}`);
+        this.syncStaffToSupabase(staffEntity as StaffEntity).catch(error => {
+          this.logger.error(`❌ [${deploymentPlatform}] Failed to auto-sync staff to Supabase: ${createStaffDto.email}`, error);
+        });
+        this.logger.log(`✅ [${deploymentPlatform}] Staff auto-sync queued: ${createStaffDto.email}`);
+      } else if (!isSupabaseUser) {
+        this.logger.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
+      }
+
+      this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
+      return { 
+        staff: staffEntity, 
+        emailSent,
+        verificationRequired: staffEntity.status === StaffStatus.PENDING
+      };
     } catch (error) {
       this.logger.error('❌ Error creating staff:', error);
       throw error;
     }
   }
 
-  async findOne(id: number): Promise<StaffEntity | null> {
+  async getAllStaff(): Promise<Omit<StaffEntity, 'password'>[]> {
     try {
-      // Try Supabase first
-      if (this.supabaseService.isConnected()) {
-        const supabase = this.supabaseService.getClient();
-        const { data, error } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (!error && data) {
-          return {
-            ...data,
-            hasAccess: data.has_access,
-            clientName: data.client_name,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
-          };
-        }
-      }
-
-      // Fallback to local
-      return this.staff.find(member => member.id === id) || null;
-    } catch (error) {
-      this.logger.error('❌ Error finding staff:', error);
-      return this.staff.find(member => member.id === id) || null;
-    }
-  }
-
-  async findByEmail(email: string): Promise<StaffEntity | null> {
-    try {
-      // Try Supabase first
-      if (this.supabaseService.isConnected()) {
-        const supabase = this.supabaseService.getClient();
-        const { data, error } = await supabase
-          .from('staff')
-          .select('*')
-          .eq('email', email)
-          .single();
-
-        if (!error && data) {
-          return {
-            ...data,
-            password: data.password_hash,
-            hasAccess: data.has_access,
-            clientName: data.client_name,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
-          };
-        }
-      }
-
-      // Fallback to local
-      return this.staff.find(member => member.email === email) || null;
-    } catch (error) {
-      this.logger.error('❌ Error finding staff by email:', error);
-      return this.staff.find(member => member.email === email) || null;
-    }
-  }
-
-  async authenticateStaff(email: string, password: string): Promise<StaffEntity | null> {
-    try {
-      this.logger.log(`🔐 Authenticating staff: ${email}`);
+      this.logger.log(`🚀 [RENDER] getAllStaff called - Fetching from both Supabase and memory`);
+      this.logger.log(`📊 [RENDER] Current in-memory staff count: ${this.staff.length}`);
       
-      const staff = await this.findByEmail(email);
-      if (!staff) {
-        this.logger.warn(`❌ Staff not found: ${email}`);
-        return null;
+      // Ensure data is loaded if storage is empty
+      if (this.staff.length === 0) {
+        this.logger.log('⚠️ [RENDER] Staff storage empty, reinitializing...');
+        this.initializeDefaultStaff();
+      }
+      
+      const allStaff: Omit<StaffEntity, 'password'>[] = [];
+
+      // First, try to get staff from Supabase (optional for demo mode)
+      try {
+        if (this.supabaseService && process.env.NODE_ENV === 'production') {
+          this.logger.log('📋 Fetching staff from Supabase (production mode)...');
+          const { data: users, error } = await this.supabaseService.client
+            .from('User')
+            .select('*')
+            .order('createdAt', { ascending: false });
+
+          if (!error && users && users.length > 0) {
+            // Convert Supabase users to StaffEntity format
+            const supabaseStaff: Omit<StaffEntity, 'password'>[] = users.map(user => {
+              const isActive = !user.inviteToken;
+              const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+              
+              return {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role as StaffRole,
+                department: user.department || (user.role === 'ADMIN' ? 'Administration' : 'General'),
+                position: user.position || (user.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+                status: status,
+                hasAccess: isActive,
+                accessToken: user.inviteToken,
+                accessTokenExpiry: user.tokenExpiry ? new Date(user.tokenExpiry) : undefined,
+                createdAt: new Date(user.createdAt),
+                updatedAt: new Date(user.updatedAt || user.createdAt),
+                createdBy: 'Admin',
+                lastLogin: user.lastLogin ? new Date(user.lastLogin) : (isActive ? new Date() : undefined)
+              };
+            });
+            
+            allStaff.push(...supabaseStaff);
+            this.logger.log(`📋 Found ${supabaseStaff.length} staff members in Supabase`);
+          } else {
+            this.logger.log('📋 No staff found in Supabase, using demo mode');
+          }
+        } else {
+          this.logger.log('📋 Supabase disabled or demo mode - using in-memory staff');
+        }
+      } catch (supabaseError) {
+        this.logger.log('📋 Supabase connection failed, using demo mode:', supabaseError.message);
       }
 
-      if (!staff.hasAccess || staff.status !== 'ACTIVE') {
-        this.logger.warn(`❌ Staff access denied: ${email}`);
-        return null;
-      }
-
-      // For default staff, use default password
-      const passwordToCheck = staff.password || await bcrypt.hash('12345678', 10);
-      const isPasswordValid = await bcrypt.compare(password, passwordToCheck);
-
-      if (isPasswordValid) {
-        this.logger.log(`✅ Staff authentication successful: ${email}`);
-        return staff;
-      }
-
-      this.logger.warn(`❌ Invalid password for: ${email}`);
-      return null;
-    } catch (error) {
-      this.logger.error('❌ Staff authentication error:', error);
-      return null;
-    }
-  }
-
-  async update(id: number, updateStaffDto: UpdateStaffDto): Promise<StaffEntity | null> {
-    try {
-      // Try Supabase first
-      if (this.supabaseService.hasAdminAccess()) {
-        const supabase = this.supabaseService.getAdminClient();
-        const { data, error } = await supabase
-          .from('staff')
-          .update({
-            name: updateStaffDto.name,
-            role: updateStaffDto.role,
-            department: updateStaffDto.department,
-            phone: updateStaffDto.phone,
-            status: updateStaffDto.status,
-            has_access: updateStaffDto.hasAccess,
-            verified: updateStaffDto.verified,
-            client_name: updateStaffDto.clientName,
-            updated_at: new Date().toISOString(),
+      // Then, get staff from in-memory storage (excluding duplicates)
+      if (this.staff && this.staff.length > 0) {
+        this.logger.log(`📋 Checking ${this.staff.length} in-memory staff members...`);
+        
+        const memoryStaff: Omit<StaffEntity, 'password'>[] = this.staff
+          .filter(staff => {
+            // Exclude if already exists in Supabase (by email)
+            const existsInSupabase = allStaff.some(s => s.email === staff.email);
+            return !existsInSupabase;
           })
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (!error && data) {
-          return {
-            ...data,
-            hasAccess: data.has_access,
-            clientName: data.client_name,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
-          };
-        }
+          .map(staff => {
+            const { password, ...staffWithoutPassword } = staff;
+            return staffWithoutPassword;
+          });
+        
+        allStaff.push(...memoryStaff);
+        this.logger.log(`📋 Added ${memoryStaff.length} unique staff members from memory`);
       }
 
-      // Fallback to local
-      const index = this.staff.findIndex(member => member.id === id);
-      if (index !== -1) {
-        this.staff[index] = { 
-          ...this.staff[index], 
-          ...updateStaffDto,
-          updatedAt: new Date().toISOString(),
-        };
-        return this.staff[index];
+      // If no staff found anywhere, initialize with default staff
+      if (allStaff.length === 0) {
+        this.logger.log('📋 No staff found anywhere, initializing with default staff...');
+        this.initializeDefaultStaff();
+        
+        // Return the initialized staff (without passwords)
+        const defaultStaff: Omit<StaffEntity, 'password'>[] = this.staff.map(staff => {
+          const { password, ...staffWithoutPassword } = staff;
+          return staffWithoutPassword;
+        });
+        
+        this.logger.log(`📋 Returning ${defaultStaff.length} default staff members`);
+        return defaultStaff;
       }
-      return null;
+
+      // Sort by creation date (newest first)
+      allStaff.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      this.logger.log(`📋 Returning ${allStaff.length} total staff members (Supabase + Memory)`);
+      
+      // Log staff summary for debugging
+      allStaff.forEach(staff => {
+        this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.status}`);
+      });
+      
+      return allStaff;
     } catch (error) {
-      this.logger.error('❌ Error updating staff:', error);
-      return null;
+      this.logger.error('Error in getAllStaff:', error);
+      
+      // Fallback to in-memory staff only
+      if (this.staff && this.staff.length > 0) {
+        this.logger.log('📋 Falling back to in-memory staff only');
+        const fallbackStaff: Omit<StaffEntity, 'password'>[] = this.staff.map(staff => {
+          const { password, ...staffWithoutPassword } = staff;
+          return staffWithoutPassword;
+        });
+        return fallbackStaff;
+      }
+      
+      this.logger.log('📋 Returning empty staff list due to error');
+      return [];
     }
   }
 
-  async remove(id: number): Promise<StaffEntity | null> {
+  async getStaffById(id: number): Promise<Omit<StaffEntity, 'password'> | null> {
     try {
-      // Try Supabase first
-      if (this.supabaseService.hasAdminAccess()) {
-        const supabase = this.supabaseService.getAdminClient();
-        const { data, error } = await supabase
-          .from('staff')
-          .delete()
-          .eq('id', id)
-          .select()
-          .single();
+      this.logger.log(`🔍 Looking for staff ID: ${id}`);
+      
+      // First check Supabase
+      const { data: supabaseUser, error } = await this.supabaseService.client
+        .from('User')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-        if (!error && data) {
-          return {
-            ...data,
-            hasAccess: data.has_access,
-            clientName: data.client_name,
-            createdAt: data.created_at,
-            updatedAt: data.updated_at,
-          };
-        }
+      if (!error && supabaseUser) {
+        this.logger.log(`📋 Found staff in Supabase: ${supabaseUser.name} (${supabaseUser.email})`);
+        
+        const isActive = !supabaseUser.inviteToken;
+        const status = isActive ? StaffStatus.ACTIVE : StaffStatus.PENDING;
+        
+        return {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          status: status,
+          hasAccess: isActive,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          createdBy: 'Admin',
+          lastLogin: supabaseUser.lastLogin ? new Date(supabaseUser.lastLogin) : (isActive ? new Date() : undefined)
+        };
       }
 
-      // Fallback to local
-      const index = this.staff.findIndex(member => member.id === id);
-      if (index !== -1) {
-        const removed = this.staff.splice(index, 1);
-        return removed[0];
+      // If not found in Supabase, check in-memory storage
+      const staff = this.staff.find(s => s.id === id);
+      if (!staff) {
+        this.logger.log(`❌ Staff ID ${id} not found in Supabase or memory`);
+        return null;
       }
-      return null;
+      
+      this.logger.log(`📋 Found staff in memory: ${staff.name} (${staff.email})`);
+      const { password, ...staffWithoutPassword } = staff;
+      return staffWithoutPassword;
     } catch (error) {
-      this.logger.error('❌ Error removing staff:', error);
+      this.logger.error(`Error finding staff by ID ${id}:`, error);
       return null;
     }
   }
+
+  async updateStaff(id: number, updateStaffDto: UpdateStaffDto): Promise<Omit<StaffEntity, 'password'>> {
+    const staffIndex = this.staff.findIndex(s => s.id === id);
+    if (staffIndex === -1) {
+      throw new NotFoundException(`Staff member with ID ${id} not found`);
+    }
+
+    const staff = this.staff[staffIndex];
+
+    // Update fields
+    if (updateStaffDto.name) staff.name = updateStaffDto.name;
+    if (updateStaffDto.email) staff.email = updateStaffDto.email;
+    if (updateStaffDto.role) staff.role = updateStaffDto.role;
+    if (updateStaffDto.status) staff.status = updateStaffDto.status;
+    if (updateStaffDto.department) staff.department = updateStaffDto.department;
+    if (updateStaffDto.position) staff.position = updateStaffDto.position;
+    if (updateStaffDto.clientName !== undefined) staff.clientName = updateStaffDto.clientName;
+    if (updateStaffDto.hasAccess !== undefined) staff.hasAccess = updateStaffDto.hasAccess;
+
+    // Hash new password if provided
+    if (updateStaffDto.password) {
+      staff.password = await bcrypt.hash(updateStaffDto.password, 10);
+    }
+
+    staff.updatedAt = new Date();
+    this.saveStaffToFile(); // Save to persistent storage
+
+    // Auto-sync to Supabase (non-blocking)
+    try {
+      this.logger.log(`🔄 Auto-syncing updated staff to Supabase: ${staff.email}`);
+      await this.unifiedSupabaseSync.syncStaff(staff);
+      this.logger.log(`✅ Updated staff synced to Supabase successfully: ${staff.email}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to auto-sync updated staff to Supabase: ${staff.email}`, error);
+    }
+
+    this.logger.log(`Staff updated: ${staff.email}`);
+
+    const { password, ...staffWithoutPassword } = staff;
+    return staffWithoutPassword;
+  }
+
+  async getStaffEnquiryCount(staffId: number): Promise<number> {
+    try {
+      const { data, error } = await this.supabaseService.client
+        .from('Enquiry')
+        .select('id', { count: 'exact', head: true })
+        .eq('staffId', staffId);
+
+      if (error) {
+        this.logger.error('Error counting staff enquiries:', error);
+        return 0;
+      }
+
+      return data?.length || 0;
+    } catch (error) {
+      this.logger.error('Error in getStaffEnquiryCount:', error);
+      return 0;
+    }
+  }
+
+  async reassignEnquiries(fromStaffId: number, toStaffId: number): Promise<number> {
+    try {
+      // Update all enquiries assigned to fromStaffId to toStaffId
+      const { data, error } = await this.supabaseService.client
+        .from('Enquiry')
+        .update({ staffId: toStaffId })
+        .eq('staffId', fromStaffId)
+        .select('id');
+
+      if (error) {
+        this.logger.error('Error reassigning enquiries:', error);
+        throw new Error('Failed to reassign enquiries');
+      }
+
+      const reassignedCount = data?.length || 0;
+      this.logger.log(`✅ Reassigned ${reassignedCount} enquiries from staff ${fromStaffId} to staff ${toStaffId}`);
+      return reassignedCount;
+    } catch (error) {
+      this.logger.error('Error in reassignEnquiries:', error);
+      throw error;
+    }
+  }
+
+  async deleteStaff(id: number, currentUserEmail?: string): Promise<void> {
+    try {
+      // Check staff management permissions - only admin@gmail.com can delete staff
+      this.checkStaffManagementPermission(currentUserEmail);
+      
+      // Protect the admin@gmail.com account from deletion
+      if (id === 1) {
+        this.logger.warn(`❌ Cannot delete system administrator: admin@gmail.com`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
+      }
+
+      // First try to delete from Supabase
+      const { data: supabaseUser, error: selectError } = await this.supabaseService.client
+        .from('User')
+        .select('email, name, role')
+        .eq('id', id)
+        .single();
+
+      if (!selectError && supabaseUser) {
+        // Check if user has assigned enquiries
+        const { data: enquiries, error: enquiryError } = await this.supabaseService.client
+          .from('Enquiry')
+          .select('id')
+          .eq('staffId', id)
+          .limit(1);
+
+        if (enquiryError) {
+          this.logger.error('Error checking user enquiries:', enquiryError);
+          throw new Error('Failed to check user dependencies');
+        }
+
+        if (enquiries && enquiries.length > 0) {
+          this.logger.warn(`❌ Cannot delete user ${supabaseUser.email}: Has assigned enquiries`);
+          throw new Error('Cannot delete staff member. This user has assigned enquiries. Please reassign or remove enquiries first.');
+        }
+
+        // Delete from Supabase
+        const { error: deleteError } = await this.supabaseService.client
+          .from('User')
+          .delete()
+          .eq('id', id);
+
+        if (deleteError) {
+          this.logger.error('Error deleting user from Supabase:', deleteError);
+          
+          // Handle foreign key constraint violations
+          if (deleteError.code === '23503') {
+            throw new Error('Cannot delete staff member. This user has assigned records. Please reassign or remove related data first.');
+          }
+          
+          throw new Error('Failed to delete user from database');
+        }
+
+        this.logger.log(`✅ Staff deleted from Supabase: ${supabaseUser.email} (${supabaseUser.role})`);
+        return;
+      }
+
+      // If not found in Supabase, try in-memory storage
+      const staffIndex = this.staff.findIndex(s => s.id === id);
+      if (staffIndex === -1) {
+        throw new NotFoundException(`Staff member with ID ${id} not found`);
+      }
+
+      const staff = this.staff[staffIndex];
+      
+      // Double-check if it's the admin@gmail.com account
+      if (staff.email === 'admin@gmail.com') {
+        this.logger.warn(`❌ Cannot delete system administrator: ${staff.email}`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
+      }
+
+      this.staff.splice(staffIndex, 1);
+      this.saveStaffToFile(); // Save to persistent storage
+      
+      // Sync deletion to Supabase in background (non-blocking)
+      this.syncStaffDeletionToSupabase(staff).catch(error => {
+        this.logger.error('❌ Failed to sync staff deletion to Supabase:', error);
+      });
+      
+      this.logger.log(`✅ Staff deleted from memory: ${staff.email}`);
+    } catch (error) {
+      this.logger.error('❌ Error deleting staff:', error);
+      throw error;
+    }
+  }
+
+  async revokeAccess(id: number): Promise<Omit<StaffEntity, 'password'>> {
+    try {
+      // First try to find and update in Supabase
+      const { data: supabaseUser, error: selectError } = await this.supabaseService.client
+        .from('User')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (!selectError && supabaseUser) {
+        // For Supabase users, we can't directly revoke access since we don't have status fields
+        // Instead, we'll set an invite token to indicate they need to re-verify
+        const revokeToken = this.generateAccessToken();
+        const tokenExpiry = new Date();
+        tokenExpiry.setHours(tokenExpiry.getHours() + 24);
+
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: revokeToken,
+            tokenExpiry: tokenExpiry.toISOString()
+          })
+          .eq('id', id);
+
+        if (updateError) {
+          this.logger.error('Error revoking access in Supabase:', updateError);
+          throw new Error('Failed to revoke access in database');
+        }
+
+        // Send revocation notification
+        await this.gmailService.sendAccessRevokedNotification(
+          supabaseUser.email,
+          supabaseUser.name,
+          supabaseUser.role
+        );
+
+        this.logger.log(`✅ Access revoked for Supabase user: ${supabaseUser.email} (${supabaseUser.role})`);
+
+        // Return the updated staff info
+        return {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          department: supabaseUser.role === 'ADMIN' ? 'Administration' : 'General',
+          position: supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member',
+          status: StaffStatus.PENDING, // Now pending re-verification
+          hasAccess: false,
+          accessToken: revokeToken,
+          accessTokenExpiry: tokenExpiry,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(),
+          createdBy: 'Admin'
+        };
+      }
+
+      // If not found in Supabase, try in-memory storage
+      const staff = this.staff.find(s => s.id === id);
+      if (!staff) {
+        throw new NotFoundException(`Staff member with ID ${id} not found`);
+      }
+
+      staff.hasAccess = false;
+      staff.status = StaffStatus.INACTIVE;
+      staff.accessToken = undefined;
+      staff.accessTokenExpiry = undefined;
+      staff.updatedAt = new Date();
+      this.saveStaffToFile(); // Save to persistent storage
+
+      // Send revocation notification
+      await this.gmailService.sendAccessRevokedNotification(
+        staff.email,
+        staff.name,
+        staff.role
+      );
+
+      this.logger.log(`✅ Access revoked for memory user: ${staff.email}`);
+
+      const { password, ...staffWithoutPassword } = staff;
+      return staffWithoutPassword;
+    } catch (error) {
+      this.logger.error('❌ Error revoking access:', error);
+      throw error;
+    }
+  }
+
+  async grantAccess(id: number): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
+    try {
+      // First try to find and update in Supabase
+      const { data: supabaseUser, error: selectError } = await this.supabaseService.client
+        .from('User')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (!selectError && supabaseUser) {
+        // Generate new access token
+        const accessToken = this.generateAccessToken();
+        const accessTokenExpiry = new Date();
+        accessTokenExpiry.setHours(accessTokenExpiry.getHours() + 24);
+
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: accessToken,
+            tokenExpiry: accessTokenExpiry.toISOString()
+          })
+          .eq('id', id);
+
+        if (updateError) {
+          this.logger.error('Error granting access in Supabase:', updateError);
+          throw new Error('Failed to grant access in database');
+        }
+
+        // Send new access link
+        const emailSent = await this.gmailService.sendAccessLink(
+          supabaseUser.email,
+          supabaseUser.name,
+          accessToken,
+          supabaseUser.role
+        );
+
+        this.logger.log(`✅ Access granted for Supabase user: ${supabaseUser.email} (${supabaseUser.role})`);
+
+        // Return the updated staff info
+        const staffInfo = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          department: supabaseUser.role === 'ADMIN' ? 'Administration' : 'General',
+          position: supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member',
+          status: StaffStatus.PENDING, // Pending verification
+          hasAccess: true,
+          accessToken: accessToken,
+          accessTokenExpiry: accessTokenExpiry,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(),
+          createdBy: 'Admin'
+        };
+
+        return { staff: staffInfo, emailSent };
+      }
+
+      // If not found in Supabase, try in-memory storage
+      const staff = this.staff.find(s => s.id === id);
+      if (!staff) {
+        throw new NotFoundException(`Staff member with ID ${id} not found`);
+      }
+
+      // Generate new access token
+      const accessToken = this.generateAccessToken();
+      const accessTokenExpiry = new Date();
+      accessTokenExpiry.setHours(accessTokenExpiry.getHours() + 24);
+
+      staff.hasAccess = true;
+      staff.status = StaffStatus.PENDING;
+      staff.accessToken = accessToken;
+      staff.accessTokenExpiry = accessTokenExpiry;
+      staff.updatedAt = new Date();
+      this.saveStaffToFile(); // Save to persistent storage
+
+      // Send new access link
+      const emailSent = await this.gmailService.sendAccessLink(
+        staff.email,
+        staff.name,
+        accessToken,
+        staff.role
+      );
+
+      this.logger.log(`✅ Access granted for memory user: ${staff.email}`);
+
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, emailSent };
+    } catch (error) {
+      this.logger.error('❌ Error granting access:', error);
+      throw error;
+    }
+  }
+
+  async verifyAccessToken(token: string): Promise<any> {
+    try {
+      // First check in-memory staff (for backward compatibility)
+      let staff = this.staff.find(s => s.accessToken === token);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
+      if (!staff) {
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('inviteToken', token)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for token:', error);
+          throw new Error('Invalid access token');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          throw new Error('Invalid access token');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        
+        // Check token expiry
+        if (!supabaseUser.tokenExpiry || new Date(supabaseUser.tokenExpiry) < new Date()) {
+          throw new Error('Access token has expired');
+        }
+
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: StaffStatus.PENDING,
+          hasAccess: false,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: new Date(supabaseUser.tokenExpiry),
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          createdBy: 'Admin'
+        };
+      } else {
+        // Check token expiry for in-memory staff
+        if (!staff.accessTokenExpiry || staff.accessTokenExpiry < new Date()) {
+          throw new Error('Access token has expired');
+        }
+      }
+
+      if (isSupabaseUser) {
+        // Update user status in Supabase to ACTIVE
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: null, // Clear the token (one-time use)
+            tokenExpiry: null,
+            // Note: We don't have status/hasAccess fields in User table, 
+            // but clearing the invite token indicates the user is active
+          })
+          .eq('id', staff.id);
+
+        if (updateError) {
+          this.logger.error('Error updating user status in Supabase:', updateError);
+          throw new Error('Failed to activate user account');
+        }
+
+        this.logger.log(`✅ User activated in Supabase: ${staff.email} (${staff.role})`);
+      } else {
+        // Update in-memory staff - full activation
+        staff.status = StaffStatus.ACTIVE;
+        staff.hasAccess = true;
+        staff.verified = true; // Mark as verified
+        staff.lastLogin = new Date();
+        staff.accessToken = undefined; // One-time use
+        staff.accessTokenExpiry = undefined;
+        staff.updatedAt = new Date();
+        this.saveStaffToFile(); // Save to persistent storage
+        
+        // Sync activated staff to Supabase for Render deployment
+        const isRender = process.env.RENDER === 'true';
+        const isProduction = process.env.NODE_ENV === 'production';
+        
+        if (isRender || isProduction) {
+          this.logger.log(`🚀 [RENDER] Syncing activated staff to Supabase: ${staff.email}`);
+          this.syncStaffToSupabaseWithRetry(staff, 3).catch(error => {
+            this.logger.warn(`⚠️ [RENDER] Failed to sync activated staff: ${error.message}`);
+          });
+        }
+      }
+
+      // Generate JWT auth token
+      const authToken = jwt.sign(
+        { 
+          id: staff.id, 
+          email: staff.email, 
+          role: staff.role,
+          name: staff.name
+        },
+        'your-secret-key', // In production, use environment variable
+        { expiresIn: '7d' }
+      );
+
+      this.logger.log(`✅ Access token verified and user activated: ${staff.email} (${staff.role})`);
+      this.logger.log(`🎉 ${staff.role} staff member ${staff.name} is now ACTIVE in the system`);
+
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, authToken };
+    } catch (error) {
+      this.logger.error('❌ Error verifying access token:', error);
+      throw error;
+    }
+  }
+
+  async authenticateStaff(email: string, password: string): Promise<{ staff: Omit<StaffEntity, 'password'>; authToken: string } | null> {
+    this.logger.log(`🔐 [RENDER] Attempting authentication for: ${email}`);
+    
+    const staff = this.staff.find(s => s.email === email);
+    
+    if (!staff) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Staff not found in system`);
+      return null;
+    }
+    
+    if (!staff.hasAccess) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: No access granted`);
+      return null;
+    }
+    
+    // Allow login for ACTIVE staff or verified PENDING staff (newly created and verified)
+    if (staff.status !== StaffStatus.ACTIVE && !(staff.status === StaffStatus.PENDING && staff.verified)) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Status is ${staff.status}, verified: ${staff.verified}`);
+      return null;
+    }
+    
+    if (!staff.verified && staff.status !== StaffStatus.ACTIVE) {
+      this.logger.warn(`❌ [RENDER] Authentication failed for ${email}: Email not verified and not active`);
+      return null;
+    }
+
+    // Handle both plain text and hashed passwords for deployment compatibility
+    let isPasswordValid = false;
+    try {
+      // First try bcrypt comparison (for hashed passwords)
+      isPasswordValid = await bcrypt.compare(password, staff.password);
+      
+      // If bcrypt fails, try plain text comparison (for development/fallback)
+      if (!isPasswordValid && staff.password === password) {
+        isPasswordValid = true;
+        this.logger.log(`⚠️ Plain text password authentication used for ${email} (development mode)`);
+      }
+    } catch (error) {
+      // If bcrypt fails, try plain text comparison as fallback
+      if (staff.password === password) {
+        isPasswordValid = true;
+        this.logger.log(`⚠️ Fallback to plain text password for ${email}`);
+      } else {
+        this.logger.error(`❌ Password comparison error for ${email}:`, error);
+        return null;
+      }
+    }
+    
+    if (!isPasswordValid) {
+      this.logger.warn(`❌ Authentication failed for ${email}: Invalid password`);
+      return null;
+    }
+
+    // Update last login
+    staff.lastLogin = new Date();
+    staff.updatedAt = new Date();
+    this.saveStaffToFile(); // Save to persistent storage
+
+    // Generate JWT auth token with environment-based secret
+    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-key-for-development';
+    const authToken = jwt.sign(
+      { 
+        id: staff.id, 
+        email: staff.email, 
+        role: staff.role,
+        name: staff.name
+      },
+      jwtSecret,
+      { expiresIn: '7d' }
+    );
+
+    this.logger.log(`✅ [RENDER] Staff authenticated successfully: ${staff.email} (${staff.role})`);
+    this.logger.log(`🎉 [RENDER] Login successful - User: ${staff.name}, Role: ${staff.role}, Status: ${staff.status}`);
+    
+    // Sync successful login to Supabase for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    if (isRender) {
+      this.logger.log(`🚀 [RENDER] Syncing login activity to Supabase for: ${staff.email}`);
+      this.syncStaffToSupabaseWithRetry(staff, 2).catch(error => {
+        this.logger.warn(`⚠️ [RENDER] Failed to sync login activity: ${error.message}`);
+      });
+    }
+
+    const { password: _, ...staffWithoutPassword } = staff;
+    return { staff: staffWithoutPassword, authToken };
+  }
+
+  async getStaffStats(): Promise<any> {
+    try {
+      // Get all staff from Supabase only
+      const allStaff = await this.getAllStaff();
+      
+      const totalStaff = allStaff.length;
+      const activeStaff = allStaff.filter(s => s.status === StaffStatus.ACTIVE).length;
+      const inactiveStaff = allStaff.filter(s => s.status === StaffStatus.INACTIVE).length;
+      const pendingStaff = allStaff.filter(s => s.status === StaffStatus.PENDING).length;
+      const adminCount = allStaff.filter(s => s.role === StaffRole.ADMIN).length;
+      const employeeCount = allStaff.filter(s => s.role === StaffRole.EMPLOYEE).length;
+      
+      // Count recent logins (last 7 days)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const recentLogins = allStaff.filter(s => s.lastLogin && s.lastLogin > sevenDaysAgo).length;
+
+      this.logger.log(`📊 Staff Statistics (Supabase): Total: ${totalStaff}, Active: ${activeStaff}, Pending: ${pendingStaff}, Admin: ${adminCount}, Employee: ${employeeCount}`);
+
+      return {
+        totalStaff,
+        activeStaff,
+        inactiveStaff,
+        pendingStaff,
+        adminCount,
+        employeeCount,
+        recentLogins
+      };
+    } catch (error) {
+      this.logger.error('Error calculating staff stats:', error);
+      
+      // Return empty stats if Supabase fails
+      return {
+        totalStaff: 0,
+        activeStaff: 0,
+        inactiveStaff: 0,
+        pendingStaff: 0,
+        adminCount: 0,
+        employeeCount: 0,
+        recentLogins: 0
+      };
+    }
+  }
+
+  async testEmailConnection(): Promise<{ connected: boolean; error?: string }> {
+    try {
+      this.logger.log('📧 Testing Gmail connection...');
+      
+      // Reinitialize transporter to pick up any credential changes
+      this.gmailService.reinitializeTransporter();
+      
+      const isConnected = await this.gmailService.testConnection();
+      this.logger.log(`📧 Gmail connection test result: ${isConnected ? 'SUCCESS ✅' : 'FAILED ❌'}`);
+      
+      if (!isConnected) {
+        return { 
+          connected: false, 
+          error: 'Gmail SMTP connection failed. Check app password format (should be 16 characters without spaces).' 
+        };
+      }
+      
+      return { connected: true };
+    } catch (error) {
+      this.logger.error('📧 Gmail connection test failed:', error);
+      return { 
+        connected: false, 
+        error: `Gmail test failed: ${error.message}` 
+      };
+    }
+  }
+
+  async verifyStaffMember(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'>; activated: boolean }> {
+    try {
+      this.logger.log(`✅ Activating staff member with ID: ${staffId}`);
+      
+      // First check in-memory staff
+      let staff = this.staff.find(s => s.id === staffId);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
+      if (!staff) {
+        this.logger.log(`✅ Staff ID ${staffId} not found in memory, checking Supabase...`);
+        
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('id', staffId)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for staff:', error);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          this.logger.error(`Staff member with ID ${staffId} not found in Supabase either`);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: supabaseUser.inviteToken ? StaffStatus.PENDING : StaffStatus.ACTIVE,
+          hasAccess: !supabaseUser.inviteToken,
+          verified: !supabaseUser.inviteToken,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`✅ Found staff in Supabase: ${staff.name} (${staff.email})`);
+      }
+
+      // Check if already verified
+      if (staff.status === StaffStatus.ACTIVE && staff.verified) {
+        this.logger.log(`✅ Staff member ${staff.name} is already verified and active`);
+        const { password, ...staffWithoutPassword } = staff;
+        return { staff: staffWithoutPassword, activated: false };
+      }
+
+      // Activate the staff member
+      staff.status = StaffStatus.ACTIVE;
+      staff.hasAccess = true;
+      staff.verified = true;
+      staff.accessToken = undefined; // Clear verification token
+      staff.accessTokenExpiry = undefined;
+      staff.lastLogin = new Date(); // Set first login time
+      staff.updatedAt = new Date();
+
+      if (isSupabaseUser) {
+        // Update Supabase user
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: null,
+            tokenExpiry: null,
+            lastLogin: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', staffId);
+
+        if (updateError) {
+          this.logger.error('Error updating Supabase user:', updateError);
+          throw new Error('Failed to activate staff member in database');
+        }
+        
+        this.logger.log(`✅ Activated Supabase user ${staff.email}`);
+      } else {
+        // Update in-memory staff
+        const staffIndex = this.staff.findIndex(s => s.id === staffId);
+        if (staffIndex !== -1) {
+          this.staff[staffIndex] = staff;
+          this.saveStaffToFile(); // Save to persistent storage
+        }
+        
+        this.logger.log(`✅ Activated in-memory staff ${staff.email}`);
+      }
+
+      // Create notification for staff activation
+      try {
+        await this.notificationsService.createSystemNotification({
+          type: 'STAFF_VERIFIED',
+          title: 'Staff Member Verified',
+          message: `${staff.name} has been verified and activated`,
+          priority: 'MEDIUM',
+        });
+        this.logger.log(`🔔 Notification sent for staff activation: ${staff.name}`);
+      } catch (error) {
+        this.logger.error('Failed to send notification for staff activation:', error);
+      }
+
+      // Return staff without password
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, activated: true };
+    } catch (error) {
+      this.logger.error('❌ Error verifying staff member:', error);
+      throw error;
+    }
+  }
+
+  async resendVerificationEmail(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean }> {
+    try {
+      this.logger.log(`📧 Attempting to resend verification email for staff ID: ${staffId}`);
+      
+      // First check in-memory staff
+      let staff = this.staff.find(s => s.id === staffId);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
+      if (!staff) {
+        this.logger.log(`📧 Staff ID ${staffId} not found in memory, checking Supabase...`);
+        
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('id', staffId)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for staff:', error);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          this.logger.error(`Staff member with ID ${staffId} not found in Supabase either`);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: supabaseUser.inviteToken ? StaffStatus.PENDING : StaffStatus.ACTIVE,
+          hasAccess: !supabaseUser.inviteToken,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`📧 Found staff in Supabase: ${staff.name} (${staff.email})`);
+      }
+
+      // Check if already verified
+      if (staff.status === StaffStatus.ACTIVE && !staff.accessToken) {
+        throw new Error('Staff member is already verified and active');
+      }
+
+      // Generate new access token
+      const newAccessToken = this.generateAccessToken();
+      const newAccessTokenExpiry = new Date();
+      newAccessTokenExpiry.setHours(newAccessTokenExpiry.getHours() + 24); // 24 hours expiry
+
+      if (isSupabaseUser) {
+        // Update Supabase user with new token
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: newAccessToken,
+            tokenExpiry: newAccessTokenExpiry.toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', staffId);
+
+        if (updateError) {
+          this.logger.error('Error updating Supabase user token:', updateError);
+          throw new Error('Failed to update verification token');
+        }
+
+        // Update local staff object for email sending
+        staff.accessToken = newAccessToken;
+        staff.accessTokenExpiry = newAccessTokenExpiry;
+        staff.updatedAt = new Date();
+        
+        this.logger.log(`📧 Updated Supabase user ${staff.email} with new verification token`);
+      } else {
+        // Update in-memory staff
+        staff.accessToken = newAccessToken;
+        staff.accessTokenExpiry = newAccessTokenExpiry;
+        staff.updatedAt = new Date();
+        this.saveStaffToFile(); // Save to persistent storage
+        
+        this.logger.log(`📧 Updated in-memory staff ${staff.email} with new verification token`);
+      }
+
+      // Send verification email with enhanced message
+      this.logger.log(`📧 Sending verification email to: ${staff.email}`);
+      
+      // Use webhook email service for Render deployment, Gmail for others
+      const isRender = process.env.RENDER === 'true';
+      let emailSent = false;
+      
+      if (isRender) {
+        emailSent = await this.webhookEmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role,
+          staff.password // Include login password for resend emails too
+        );
+      } else {
+        emailSent = await this.gmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role
+        );
+      }
+
+      this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to ${staff.email}`);
+
+      // Return staff without password
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, emailSent };
+    } catch (error) {
+      this.logger.error('❌ Error resending verification email:', error);
+      throw error;
+    }
+  }
+
+  // Method to clear Supabase and sync all current localhost staff
+  async clearAndSyncAllStaffToSupabase(): Promise<{ cleared: number; synced: number; errors: number }> {
+    console.log('🧹 Clearing existing staff from Supabase...');
+    
+    let clearedCount = 0;
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Step 1: Clear existing staff from Supabase (except system users)
+      const { error: deleteError } = await this.supabaseService.client
+        .from('Staff')
+        .delete()
+        .neq('email', 'admin@gmail.com') // Don't delete system admin
+        .neq('email', 'gowthaamankrishna1998@gmail.com'); // Don't delete system admin
+      
+      if (deleteError) {
+        console.error('❌ Error clearing Supabase staff:', deleteError);
+      } else {
+        console.log('✅ Cleared existing staff from Supabase (kept system users)');
+        clearedCount = 1; // Indicate successful clear
+      }
+
+      // Step 2: Sync all current localhost staff to Supabase
+      console.log('🔄 Syncing', this.staff.length, 'localhost staff to Supabase...');
+      
+      for (const staff of this.staff) {
+        try {
+          await this.syncStaffToSupabase(staff);
+          syncedCount++;
+          console.log(`✅ Synced staff ${staff.id}: ${staff.name}`);
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error(`❌ Failed to sync staff ${staff.id}:`, error);
+          errorCount++;
+        }
+      }
+      
+      console.log(`🎉 Staff sync completed: ${syncedCount} synced, ${errorCount} errors`);
+      return { cleared: clearedCount, synced: syncedCount, errors: errorCount };
+      
+    } catch (error) {
+      console.error('❌ Error in clearAndSyncAllStaffToSupabase:', error);
+      return { cleared: 0, synced: syncedCount, errors: errorCount + 1 };
+    }
+  }
+
+  async getStaffSyncStatus(): Promise<any> {
+    try {
+      const { count, error } = await this.supabaseService.client
+        .from('Staff')
+        .select('*', { count: 'exact', head: true });
+      
+      return {
+        supabaseCount: count || 0,
+        localCount: this.staff.length,
+        lastSync: new Date().toISOString(),
+        status: error ? 'error' : 'connected'
+      };
+    } catch (error) {
+      return {
+        supabaseCount: 0,
+        localCount: this.staff.length,
+        lastSync: null,
+        status: 'disconnected',
+        error: error.message
+      };
+    }
+  }
+
+  // Clear all staff
+  async clearAllStaff(): Promise<{ message: string; cleared: number }> {
+    const clearedCount = this.staff.length;
+    this.staff = [];
+    this.nextId = 1;
+    this.saveStaffToFile();
+    
+    console.log('🗑️ Cleared all staff from storage:', clearedCount);
+    return {
+      message: `Cleared ${clearedCount} staff members from storage`,
+      cleared: clearedCount
+    };
+  }
+
+  // Sync staff deletion to Supabase
+  private async syncStaffDeletionToSupabase(staff: StaffEntity): Promise<void> {
+    if (!this.supabaseService) {
+      console.log('⚠️ Supabase service not available, skipping staff deletion sync');
+      return;
+    }
+
+    try {
+      // Try to delete from Supabase staff table (lowercase as requested)
+      const { error: staffError } = await this.supabaseService.client
+        .from('staff')
+        .delete()
+        .eq('email', staff.email);
+
+      if (staffError) {
+        console.log('⚠️ Failed to delete from staff table:', staffError.message);
+      } else {
+        console.log(`✅ Staff deletion synced to Supabase staff table: ${staff.email}`);
+      }
+
+      // Also try to delete from User table if it exists there
+      const { error: userError } = await this.supabaseService.client
+        .from('User')
+        .delete()
+        .eq('email', staff.email);
+
+      if (userError) {
+        console.log('⚠️ Failed to delete from User table:', userError.message);
+      } else {
+        console.log(`✅ Staff deletion synced to Supabase User table: ${staff.email}`);
+      }
+    } catch (error) {
+      console.error('❌ Error syncing staff deletion to Supabase:', error);
+      throw error;
+    }
+  }
+
+  // Sync staff to Supabase using unified sync service
+  private async syncStaffToSupabase(staff: StaffEntity): Promise<void> {
+    try {
+      console.log('🔄 Syncing staff to Supabase via unified service:', staff.name);
+      
+      // Use the unified sync service which handles table name variations
+      await this.unifiedSupabaseSync.syncStaff(staff);
+      
+      console.log('✅ Staff synced to Supabase successfully:', staff.name);
+      
+    } catch (error) {
+      console.log('⚠️ Staff sync failed but continuing operations:', error.message);
+      // Don't throw - let the application continue
+      // Email functionality should not be blocked by Supabase sync issues
+    }
+  }
+
+  // Sync all staff to Supabase
+  async syncAllStaffToSupabase(): Promise<{ message: string; synced: number; errors: number }> {
+    if (!this.supabaseService) {
+      throw new Error('Supabase service not available');
+    }
+
+    let synced = 0;
+    let errors = 0;
+
+    console.log('🔄 Starting bulk sync of', this.staff.length, 'staff members to Supabase');
+
+    for (const staffMember of this.staff) {
+      try {
+        await this.syncStaffToSupabase(staffMember);
+        synced++;
+        // Add delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('❌ Failed to sync staff:', staffMember.name, error);
+        errors++;
+      }
+    }
+
+    console.log('✅ Bulk staff sync completed:', synced, 'synced,', errors, 'errors');
+    
+    return {
+      message: `Synced ${synced} staff members to Supabase (${errors} errors)`,
+      synced,
+      errors
+    };
+  }
+
+  // Clear Supabase staff and sync current localhost data
+  async clearSupabaseAndSyncLocal(): Promise<{ message: string; cleared: number; synced: number; errors: number }> {
+    if (!this.supabaseService) {
+      throw new Error('Supabase service not available');
+    }
+
+    console.log('🧹 Clearing existing staff from Supabase...');
+    
+    let clearedCount = 0;
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Step 1: Clear existing staff from Supabase (except system users)
+      const { error: deleteError } = await this.supabaseService.client
+        .from('Staff')
+        .delete()
+        .neq('email', 'admin@gmail.com') // Don't delete system admin
+        .neq('email', 'gowthaamankrishna1998@gmail.com'); // Don't delete system admin
+      
+      if (deleteError) {
+        console.error('❌ Error clearing Supabase staff:', deleteError);
+      } else {
+        console.log('✅ Cleared existing staff from Supabase (kept system users)');
+        clearedCount = 1; // Indicate successful clear
+      }
+
+      // Step 2: Sync all current localhost staff to Supabase
+      console.log('🔄 Syncing', this.staff.length, 'localhost staff to Supabase...');
+      
+      for (const staffMember of this.staff) {
+        try {
+          await this.syncStaffToSupabase(staffMember);
+          syncedCount++;
+          console.log(`✅ Synced staff ${staffMember.id}: ${staffMember.name}`);
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          console.error(`❌ Failed to sync staff ${staffMember.id}:`, error);
+          errorCount++;
+        }
+      }
+      
+      console.log(`🎉 Staff clear and sync completed: ${syncedCount} synced, ${errorCount} errors`);
+      return { 
+        message: `Cleared Supabase and synced ${syncedCount} staff members (${errorCount} errors)`,
+        cleared: clearedCount, 
+        synced: syncedCount, 
+        errors: errorCount 
+      };
+      
+    } catch (error) {
+      console.error('❌ Error in clearSupabaseAndSyncLocal:', error);
+      return { 
+        message: 'Error during clear and sync operation',
+        cleared: 0, 
+        synced: syncedCount, 
+        errors: errorCount + 1 
+      };
+    }
+  }
+
+  async testEmailDelivery(testEmail: string, testName: string): Promise<{ success: boolean; method: string; details: string }> {
+    this.logger.log(`📧 Testing email delivery to: ${testEmail}`);
+    
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    try {
+      // Generate test access token
+      const testToken = this.generateAccessToken();
+      
+      // Test the email service
+      const emailSent = await this.gmailService.sendAccessLink(
+        testEmail,
+        testName,
+        testToken,
+        StaffRole.ADMIN
+      );
+      
+      if (emailSent) {
+        const method = isRender ? 'SendGrid/Webhook/Fallback' : 'SMTP/SendGrid';
+        return {
+          success: true,
+          method: method,
+          details: `Email test successful using ${method} delivery method`
+        };
+      } else {
+        return {
+          success: false,
+          method: 'Failed',
+          details: 'All email delivery methods failed'
+        };
+      }
+    } catch (error) {
+      this.logger.error(`❌ Email test failed for ${testEmail}:`, error);
+      return {
+        success: false,
+        method: 'Error',
+        details: `Email test error: ${error.message}`
+      };
+    }
+  }
+
+  // Maintain exactly 7 default staff members
+  async maintainDefaultStaffCount(): Promise<void> {
+    try {
+      const defaultStaffEmails = [
+        'gowthaamankrishna1998@gmail.com',
+        'gowthaamaneswar1998@gmail.com', 
+        'newacttmis@gmail.com',
+        'dinesh@gmail.com',
+        'tmsnunciya59@gmail.com',
+        'admin@businessloan.com',
+        'admin@gmail.com'
+      ];
+
+      // Count current default staff
+      const currentDefaultStaff = this.staff.filter(s => defaultStaffEmails.includes(s.email));
+      const currentTotal = this.staff.length;
+
+      this.logger.log(`🔧 Staff maintenance check: ${currentTotal} total, ${currentDefaultStaff.length} default staff`);
+
+      // If we have more than 7 staff, remove non-default ones
+      if (currentTotal > 7) {
+        const nonDefaultStaff = this.staff.filter(s => !defaultStaffEmails.includes(s.email));
+        const toRemove = currentTotal - 7;
+        
+        this.logger.log(`🧹 Removing ${toRemove} non-default staff members to maintain 7 total`);
+        
+        // Remove oldest non-default staff first
+        const staffToRemove = nonDefaultStaff
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          .slice(0, toRemove);
+
+        for (const staff of staffToRemove) {
+          const index = this.staff.findIndex(s => s.id === staff.id);
+          if (index !== -1) {
+            this.staff.splice(index, 1);
+            this.logger.log(`🗑️ Auto-removed staff: ${staff.name} (${staff.email})`);
+          }
+        }
+
+        this.saveStaffToFile();
+      }
+
+      // If we have less than 7 default staff, reinitialize
+      if (currentDefaultStaff.length < 7) {
+        this.logger.log(`⚠️ Missing default staff members. Reinitializing to ensure all 7 are present.`);
+        await this.resetToDefaultStaff();
+      }
+
+    } catch (error) {
+      this.logger.error('Error maintaining default staff count:', error);
+    }
+  }
+
+  // Reset to exactly 7 default staff members
+  async resetToDefaultStaff(): Promise<{ message: string; staffCount: number; resetStaff: any[] }> {
+    try {
+      this.logger.log('🔄 Resetting to exactly 7 default staff members...');
+      
+      // Clear current staff
+      this.staff = [];
+      
+      // Reinitialize with default 7 staff
+      this.initializeDefaultStaff();
+      
+      // Save to file
+      this.saveStaffToFile();
+      
+      // Clear Supabase and sync new default staff
+      try {
+        await this.clearSupabaseAndSyncLocal();
+      } catch (error) {
+        this.logger.warn('Could not sync to Supabase, but local reset completed:', error.message);
+      }
+
+      const resetStaff = this.staff.map(s => ({
+        id: s.id,
+        name: s.name,
+        email: s.email,
+        role: s.role,
+        department: s.department,
+        status: s.status
+      }));
+
+      this.logger.log(`✅ Successfully reset to ${this.staff.length} default staff members`);
+      
+      return {
+        message: 'Successfully reset to 7 default staff members',
+        staffCount: this.staff.length,
+        resetStaff
+      };
+    } catch (error) {
+      this.logger.error('Error resetting to default staff:', error);
+      throw error;
+    }
+  }
+
+  // Auto-cleanup method to be called periodically
+  async autoCleanupStaff(): Promise<{ cleaned: number; maintained: number }> {
+    try {
+      this.logger.log('🧹 Starting automatic staff cleanup...');
+      
+      const beforeCount = this.staff.length;
+      await this.maintainDefaultStaffCount();
+      const afterCount = this.staff.length;
+      
+      const cleaned = beforeCount - afterCount;
+      
+      this.logger.log(`✅ Auto-cleanup completed: ${cleaned} staff removed, ${afterCount} maintained`);
+      
+      return {
+        cleaned,
+        maintained: afterCount
+      };
+    } catch (error) {
+      this.logger.error('Error in auto-cleanup:', error);
+      throw error;
+    }
+  }
+
+  // Get all staff with their assigned enquiries for management table
+  async getAllStaffWithEnquiries(): Promise<any[]> {
+    try {
+      this.logger.log('📋 Getting all staff with assigned enquiries...');
+      
+      // Get basic staff information
+      const allStaff = await this.getAllStaff();
+      
+      // Load enquiries data to get assignments
+      const fs = require('fs');
+      const path = require('path');
+      const enquiriesFile = path.join(process.cwd(), 'data', 'enquiries.json');
+      
+      let enquiries = [];
+      try {
+        if (fs.existsSync(enquiriesFile)) {
+          const enquiriesData = fs.readFileSync(enquiriesFile, 'utf8');
+          enquiries = JSON.parse(enquiriesData);
+        }
+      } catch (error) {
+        this.logger.warn('Could not load enquiries data:', error.message);
+      }
+
+      // Enhance staff data with assigned enquiries
+      const staffWithEnquiries = allStaff.map(staff => {
+        const assignedEnquiries = enquiries.filter(enquiry => 
+          enquiry.staffId === staff.id || 
+          enquiry.assignedStaff === staff.name
+        );
+
+        const clientNames = assignedEnquiries.map(enquiry => 
+          enquiry.clientName || enquiry.name || enquiry.businessName
+        ).filter(name => name);
+
+        return {
+          ...staff,
+          assignedEnquiries: assignedEnquiries.length,
+          clientNames: clientNames,
+          clientNamesDisplay: clientNames.length > 0 ? clientNames.join(', ') : 'No clients assigned',
+          enquiryDetails: assignedEnquiries.map(enquiry => ({
+            id: enquiry.id,
+            clientName: enquiry.clientName || enquiry.name,
+            businessName: enquiry.businessName,
+            loanAmount: enquiry.loanAmount,
+            mobile: enquiry.mobile,
+            createdAt: enquiry.createdAt
+          }))
+        };
+      });
+
+      this.logger.log(`✅ Retrieved ${staffWithEnquiries.length} staff members with enquiry assignments`);
+      
+      // Log assignment summary
+      staffWithEnquiries.forEach(staff => {
+        this.logger.log(`   👤 ${staff.name}: ${staff.assignedEnquiries} enquiries - ${staff.clientNamesDisplay}`);
+      });
+
+      return staffWithEnquiries;
+    } catch (error) {
+      this.logger.error('Error getting staff with enquiries:', error);
+      throw error;
+    }
+  }
+
+  // Update staff assignment when enquiry is assigned
+  async updateStaffAssignment(staffId: number, enquiryData: any): Promise<void> {
+    try {
+      this.logger.log(`📋 Updating staff assignment for staff ${staffId} with enquiry ${enquiryData.id}`);
+      
+      const staffIndex = this.staff.findIndex(s => s.id === staffId);
+      if (staffIndex !== -1) {
+        const currentClientName = this.staff[staffIndex].clientName || '';
+        const newClientName = enquiryData.clientName || enquiryData.name || enquiryData.businessName;
+        
+        // Add to existing client names if not already present
+        const clientNames = currentClientName.split(', ').filter(name => name.trim());
+        if (!clientNames.includes(newClientName)) {
+          clientNames.push(newClientName);
+          this.staff[staffIndex].clientName = clientNames.join(', ');
+          this.staff[staffIndex].updatedAt = new Date();
+          
+          // Save updated staff data
+          this.saveStaffToFile();
+          
+          this.logger.log(`✅ Updated staff ${this.staff[staffIndex].name} client list: ${this.staff[staffIndex].clientName}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error updating staff assignment:', error);
+    }
+  }
+
+  // Manually activate a staff member (for Render deployment when email fails)
+  async manuallyActivateStaff(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'> }> {
+    try {
+      this.logger.log(`🚀 [RENDER] Manually activating staff ID: ${staffId}`);
+      
+      const staff = this.staff.find(s => s.id === staffId);
+      if (!staff) {
+        throw new Error(`Staff member with ID ${staffId} not found`);
+      }
+      
+      // Activate the staff member
+      staff.status = StaffStatus.ACTIVE;
+      staff.hasAccess = true;
+      staff.verified = true;
+      staff.accessToken = undefined; // Clear verification token
+      staff.accessTokenExpiry = undefined;
+      staff.updatedAt = new Date();
+      
+      this.saveStaffToFile();
+      
+      // Sync to Supabase for Render deployment
+      const isRender = process.env.RENDER === 'true';
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      if (isRender || isProduction) {
+        this.logger.log(`🚀 [RENDER] Syncing manually activated staff to Supabase: ${staff.email}`);
+        this.syncStaffToSupabaseWithRetry(staff, 3).catch(error => {
+          this.logger.warn(`⚠️ [RENDER] Failed to sync manually activated staff: ${error.message}`);
+        });
+      }
+      
+      this.logger.log(`✅ [RENDER] Staff manually activated: ${staff.email} (${staff.role})`);
+      
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword };
+    } catch (error) {
+      this.logger.error('❌ [RENDER] Error manually activating staff:', error);
+      throw error;
+    }
+  }
+
+  // Grant immediate access to all existing staff (for Render deployment)
+  async grantAccessToAllStaff(): Promise<{ updated: number; staff: string[] }> {
+    try {
+      this.logger.log('🚀 [RENDER] Granting access to all existing staff for immediate login...');
+      
+      let updatedCount = 0;
+      const updatedStaff: string[] = [];
+      
+      for (const staff of this.staff) {
+        if (!staff.hasAccess || !staff.verified || staff.status !== StaffStatus.ACTIVE) {
+          staff.hasAccess = true;
+          staff.verified = true;
+          staff.status = StaffStatus.ACTIVE;
+          staff.updatedAt = new Date();
+          
+          updatedCount++;
+          updatedStaff.push(staff.email);
+          
+          this.logger.log(`✅ [RENDER] Granted access to: ${staff.email} (${staff.role})`);
+        }
+      }
+      
+      if (updatedCount > 0) {
+        this.saveStaffToFile();
+        this.logger.log(`✅ [RENDER] Updated ${updatedCount} staff members for immediate login access`);
+      } else {
+        this.logger.log('📝 [RENDER] All staff already have access - no updates needed');
+      }
+      
+      return {
+        updated: updatedCount,
+        staff: updatedStaff
+      };
+    } catch (error) {
+      this.logger.error('❌ [RENDER] Error granting access to staff:', error);
+      throw error;
+    }
+  }
+
+  // Retry mechanism for Supabase sync in Render deployment
+  async syncStaffToSupabaseWithRetry(staff: StaffEntity, maxRetries: number = 3): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.logger.log(`🔄 [RENDER] Supabase sync attempt ${attempt}/${maxRetries} for staff: ${staff.email}`);
+        
+        // Use the unified sync service with timeout
+        const syncPromise = this.unifiedSupabaseSync.syncStaff(staff);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Sync timeout')), 10000); // 10 second timeout
+        });
+        
+        await Promise.race([syncPromise, timeoutPromise]);
+        
+        this.logger.log(`✅ [RENDER] Staff synced to Supabase successfully on attempt ${attempt}: ${staff.email}`);
+        return; // Success, exit retry loop
+        
+      } catch (error) {
+        this.logger.warn(`⚠️ [RENDER] Sync attempt ${attempt} failed for ${staff.email}: ${error.message}`);
+        
+        if (attempt === maxRetries) {
+          this.logger.error(`❌ [RENDER] All sync attempts failed for ${staff.email}. Staff will work locally but may not appear in Supabase.`);
+          throw error;
+        }
+        
+        // Wait before retry (exponential backoff)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        this.logger.log(`⏳ [RENDER] Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
 }

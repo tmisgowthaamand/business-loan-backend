@@ -1,132 +1,155 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CreateCashfreeApplicationDto } from './dto/create-cashfree-application.dto';
-import { UpdateCashfreeApplicationDto } from './dto/update-cashfree-application.dto';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Optional,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { SupabaseService } from '../supabase/supabase.service';
+import { IdGeneratorService } from '../common/services/id-generator.service';
 import { ShortlistService } from '../shortlist/shortlist.service';
+import { CreateCashfreeApplicationDto } from './dto';
+import { User, CashfreeStatus } from '@prisma/client';
+import { UnifiedSupabaseSyncService } from '../common/services/unified-supabase-sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface User {
-  id: number;
-  name?: string;
-  email?: string;
-}
-
-export interface CashfreeApplication {
-  id: number;
-  shortlistId: number;
-  loanAmount: number;
-  tenure?: number;
-  interestRate?: number;
-  status: string;
-  submittedBy?: {
-    id: number;
-    name: string;
-    email: string;
-  };
-  shortlist?: {
-    id: number;
-    name: string;
-    mobile: string;
-    businessName: string;
-    businessType: string;
-    loanAmount: number;
-    enquiry?: any;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
 @Injectable()
 export class CashfreeService {
-  private readonly logger = new Logger(CashfreeService.name);
-  private demoApplications: CashfreeApplication[] = [];
   private readonly dataDir = path.join(process.cwd(), 'data');
   private readonly paymentsFile = path.join(this.dataDir, 'payments.json');
+  private demoApplications: any[] = [];
 
-  constructor(private readonly shortlistService: ShortlistService) {
-    this.initializeService();
-  }
-
-  private async initializeService() {
-    // Ensure data directory exists
-    if (!fs.existsSync(this.dataDir)) {
-      fs.mkdirSync(this.dataDir, { recursive: true });
-    }
-
-    // Load existing payments
-    await this.loadPayments();
-
-    // Start periodic refresh for Render deployment
-    if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
-      this.logger.log('🚀 [RENDER] Starting periodic refresh for payment gateway service');
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private supabaseService: SupabaseService,
+    private idGeneratorService: IdGeneratorService,
+    @Inject(forwardRef(() => ShortlistService))
+    private shortlistService: ShortlistService,
+    private unifiedSupabaseSync: UnifiedSupabaseSyncService,
+  ) {
+    console.log('🚀 [RENDER] CashfreeService constructor called');
+    this.loadPayments();
+    
+    // Start periodic data refresh for Render deployment
+    const isRender = process.env.RENDER === 'true';
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isRender || isProduction) {
       this.startPeriodicRefresh();
     }
   }
-
+  
   private startPeriodicRefresh() {
+    // Refresh data every 4 minutes to ensure visibility
     setInterval(async () => {
       await this.refreshPaymentData();
-    }, 4 * 60 * 1000); // Every 4 minutes
+    }, 4 * 60 * 1000);
+    
+    console.log('⏰ [RENDER] Started periodic payment data refresh (every 4 minutes)');
   }
-
+  
   private async refreshPaymentData() {
     try {
-      this.logger.log('🔄 [RENDER] Refreshing payment gateway data...');
+      console.log('🔄 [RENDER] Refreshing payment data...');
       
-      // Ensure data is loaded if storage is empty
+      // Reload payments from file if storage is empty
       if (this.demoApplications.length === 0) {
         await this.loadPayments();
       }
-
-      this.logger.log(`💳 [RENDER] Payment gateway refresh complete - ${this.demoApplications.length} applications`);
+      
+      // Sync with shortlist service for latest client data
+      if (this.shortlistService) {
+        await this.syncWithShortlistService();
+      }
+      
+      console.log(`✅ [RENDER] Payment data refreshed: ${this.demoApplications.length} applications`);
     } catch (error) {
-      this.logger.error('❌ [RENDER] Payment gateway refresh failed:', error);
+      console.warn('⚠️ [RENDER] Payment data refresh failed:', error.message);
+    }
+  }
+  
+  private async syncWithShortlistService() {
+    try {
+      const shortlists = await this.shortlistService.findAll(null);
+      console.log(`🔄 [RENDER] Synced with ${shortlists.length} shortlists for payment gateway`);
+      
+      // Update payment application references with latest shortlist data
+      this.demoApplications = this.demoApplications.map(payment => {
+        const shortlist = shortlists.find(s => s.id === payment.shortlistId);
+        if (shortlist) {
+          payment.name = shortlist.name || payment.name;
+          payment.mobile = shortlist.mobile || payment.mobile;
+          payment.businessType = shortlist.businessType || payment.businessType;
+          payment.businessName = shortlist.businessName || payment.businessName;
+          payment.loanAmount = shortlist.loanAmount || payment.loanAmount;
+        }
+        return payment;
+      });
+      
+      await this.savePayments();
+    } catch (error) {
+      console.warn('⚠️ [RENDER] Shortlist service sync failed:', error.message);
     }
   }
 
-  private async loadPayments() {
+  private loadPayments() {
     try {
+      // Ensure data directory exists
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+        console.log('📁 [RENDER] Created data directory for payments');
+      }
+      
       if (fs.existsSync(this.paymentsFile)) {
         const data = fs.readFileSync(this.paymentsFile, 'utf8');
         this.demoApplications = JSON.parse(data);
-        this.logger.log(`💳 Loaded ${this.demoApplications.length} payment applications from file`);
+        console.log('✅ [RENDER] Loaded', this.demoApplications.length, 'payment applications from persistent storage');
       } else {
-        this.logger.log('💳 No existing payments file, creating sample data');
-        await this.createSamplePayments();
+        console.log('🆕 [RENDER] No existing payments file, creating sample data');
+        this.createSamplePayments();
       }
     } catch (error) {
-      this.logger.error('❌ Error loading payments:', error);
-      await this.createSamplePayments();
+      console.log('❌ [RENDER] Error loading payments file, creating sample data:', error.message);
+      this.createSamplePayments();
     }
   }
 
-  private async savePayments() {
-    try {
-      fs.writeFileSync(this.paymentsFile, JSON.stringify(this.demoApplications, null, 2));
-      this.logger.log(`💳 Saved ${this.demoApplications.length} payment applications to file`);
-    } catch (error) {
-      this.logger.error('❌ Error saving payments:', error);
-    }
-  }
-
-  private async createSamplePayments() {
-    const samplePayments: CashfreeApplication[] = [
+  private createSamplePayments() {
+    const samplePayments = [
       {
-        id: Date.now() + 1,
-        shortlistId: 1001,
+        id: 1,
+        shortlistId: 1,
         loanAmount: 500000,
         tenure: 24,
         interestRate: 12.5,
-        status: 'PENDING',
+        processingFee: 5000,
+        purpose: 'Business Expansion',
+        collateral: 'Property',
+        guarantor: 'Spouse',
+        bankAccount: '1234567890',
+        ifscCode: 'HDFC0001234',
+        panCard: 'ABCDE1234F',
+        aadharCard: '1234-5678-9012',
+        salarySlips: true,
+        itrReturns: true,
+        businessProof: true,
+        addressProof: true,
+        remarks: 'All documents verified',
+        status: 'PENDING' as CashfreeStatus,
+        submittedById: 1,
+        submittedAt: new Date('2024-10-15'),
+        decisionDate: null,
         shortlist: {
-          id: 1001,
+          id: 1,
           name: 'BALAMURUGAN',
           mobile: '9876543215',
           businessName: 'Balamurugan Enterprises',
           businessType: 'Manufacturing',
           loanAmount: 500000,
           enquiry: {
-            id: 9570,
+            id: 1,
             name: 'BALAMURUGAN',
             mobile: '9876543215',
             businessType: 'Manufacturing',
@@ -137,56 +160,84 @@ export class CashfreeService {
           id: 1,
           name: 'Pankil',
           email: 'govindamarketing9998@gmail.com'
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        }
       },
       {
-        id: Date.now() + 2,
-        shortlistId: 1002,
+        id: 2,
+        shortlistId: 2,
         loanAmount: 750000,
         tenure: 36,
         interestRate: 11.8,
-        status: 'APPROVED',
+        processingFee: 7500,
+        purpose: 'Working Capital',
+        collateral: 'Machinery',
+        guarantor: 'Business Partner',
+        bankAccount: '9876543210',
+        ifscCode: 'ICICI0001234',
+        panCard: 'FGHIJ5678K',
+        aadharCard: '9876-5432-1098',
+        salarySlips: true,
+        itrReturns: true,
+        businessProof: true,
+        addressProof: true,
+        remarks: 'High priority client',
+        status: 'PENDING' as CashfreeStatus,
+        submittedById: 2,
+        submittedAt: new Date('2024-10-14'),
+        decisionDate: null,
         shortlist: {
-          id: 1002,
+          id: 2,
           name: 'RAJESH KUMAR',
           mobile: '9876543216',
-          businessName: 'Kumar Trading Co',
+          businessName: 'Kumar Industries',
           businessType: 'Trading',
           loanAmount: 750000,
           enquiry: {
-            id: 9571,
+            id: 2,
             name: 'RAJESH KUMAR',
             mobile: '9876543216',
             businessType: 'Trading',
-            businessName: 'Kumar Trading Co'
+            businessName: 'Kumar Industries'
           }
         },
         submittedBy: {
           id: 2,
           name: 'Venkat',
           email: 'gowthaamaneswar1998@gmail.com'
-        },
-        createdAt: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        updatedAt: new Date().toISOString()
+        }
       },
       {
-        id: Date.now() + 3,
-        shortlistId: 1003,
-        loanAmount: 1000000,
-        tenure: 48,
+        id: 3,
+        shortlistId: 3,
+        loanAmount: 300000,
+        tenure: 18,
         interestRate: 13.2,
-        status: 'PROCESSING',
+        processingFee: 3000,
+        purpose: 'Equipment Purchase',
+        collateral: 'Vehicle',
+        guarantor: 'Family Member',
+        bankAccount: '5555666677',
+        ifscCode: 'SBI0001234',
+        panCard: 'LMNOP9012Q',
+        aadharCard: '5555-6666-7777',
+        salarySlips: false,
+        itrReturns: true,
+        businessProof: true,
+        addressProof: true,
+        remarks: 'Small business loan',
+        status: 'PENDING' as CashfreeStatus,
+        submittedById: 3,
+        submittedAt: new Date('2024-10-13'),
+        decisionDate: null,
         shortlist: {
-          id: 1003,
+          id: 3,
           name: 'PRIYA SHARMA',
           mobile: '9876543217',
           businessName: 'Sharma Textiles',
           businessType: 'Textiles',
-          loanAmount: 1000000,
+          loanAmount: 300000,
           enquiry: {
-            id: 9572,
+            id: 3,
             name: 'PRIYA SHARMA',
             mobile: '9876543217',
             businessType: 'Textiles',
@@ -197,159 +248,606 @@ export class CashfreeService {
           id: 3,
           name: 'Dinesh',
           email: 'dinesh@gmail.com'
-        },
-        createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-        updatedAt: new Date().toISOString()
+        }
       }
     ];
 
     this.demoApplications = samplePayments;
-    await this.savePayments();
-    this.logger.log('💳 Created sample payment applications');
+    this.savePayments();
+    console.log('💳 Created', samplePayments.length, 'sample payment applications');
   }
 
-  async createApplication(createCashfreeApplicationDto: CreateCashfreeApplicationDto): Promise<CashfreeApplication> {
+  private savePayments() {
     try {
-      this.logger.log('💳 Creating payment gateway application:', createCashfreeApplicationDto);
+      if (!fs.existsSync(this.dataDir)) {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      }
+      fs.writeFileSync(this.paymentsFile, JSON.stringify(this.demoApplications, null, 2));
+      console.log('💾 Saved', this.demoApplications.length, 'payment applications to file');
+    } catch (error) {
+      console.error('❌ Error saving payments:', error);
+    }
+  }
 
-      // Fetch shortlist data for client information
+  async createApplication(
+    createCashfreeApplicationDto: CreateCashfreeApplicationDto,
+    userId: number,
+  ) {
+    try {
+      // Force demo mode - create in-memory application
+      console.log('📝 Using demo mode - creating payment application with data:', createCashfreeApplicationDto);
+      
+      // Fetch real shortlist data if shortlistId is provided
       let shortlistData = null;
       if (createCashfreeApplicationDto.shortlistId) {
         try {
           shortlistData = await this.shortlistService.findOne(createCashfreeApplicationDto.shortlistId);
+          console.log('📝 Found shortlist data:', JSON.stringify(shortlistData, null, 2));
+          console.log('📝 Shortlist name:', shortlistData?.name);
+          console.log('📝 Shortlist mobile:', shortlistData?.mobile);
+          console.log('📝 Shortlist businessType:', shortlistData?.businessType);
+          console.log('📝 Shortlist enquiry data:', shortlistData?.enquiry);
           
-          // Handle error responses from shortlist service
+          // If shortlist has error property, it means it wasn't found
           if (shortlistData?.error) {
-            this.logger.log('⚠️ Shortlist not found, using fallback data');
+            console.log('⚠️ Shortlist not found, using fallback data');
             shortlistData = null;
           }
         } catch (error) {
-          this.logger.log('⚠️ Could not fetch shortlist data:', error);
+          console.log('⚠️ Could not fetch shortlist data:', error);
           shortlistData = null;
         }
       }
-
-      const newApplication: CashfreeApplication = {
-        id: Date.now(),
-        shortlistId: createCashfreeApplicationDto.shortlistId,
-        loanAmount: createCashfreeApplicationDto.loanAmount,
-        tenure: createCashfreeApplicationDto.tenure || 24,
+      
+      // Generate 1-2 digit ID using ID generator service
+      const applicationId = await this.idGeneratorService.generateCashfreeId();
+      
+      const mockApplication = {
+        id: applicationId,
+        shortlistId: createCashfreeApplicationDto.shortlistId || 1,
+        loanAmount: createCashfreeApplicationDto.loanAmount || 0,
+        tenure: createCashfreeApplicationDto.tenure || 12,
         interestRate: createCashfreeApplicationDto.interestRate || 12.5,
-        status: 'PENDING',
-        submittedBy: {
-          id: 1,
-          name: 'System User',
-          email: 'system@businessloan.com'
-        },
-        shortlist: shortlistData ? {
-          id: shortlistData.id,
-          name: shortlistData.name || shortlistData.enquiry?.name || 'Unknown Client',
-          mobile: shortlistData.mobile || shortlistData.enquiry?.mobile || 'N/A',
-          businessName: shortlistData.businessName || shortlistData.enquiry?.businessName || shortlistData.businessType || 'General Business',
-          businessType: shortlistData.businessType || shortlistData.enquiry?.businessType || 'General Business',
-          loanAmount: shortlistData.loanAmount || shortlistData.enquiry?.loanAmount || createCashfreeApplicationDto.loanAmount,
-          enquiry: shortlistData.enquiry || {
-            id: shortlistData.enquiryId || shortlistData.id || 1,
-            name: shortlistData.name || shortlistData.enquiry?.name || 'Unknown Client',
-            mobile: shortlistData.mobile || shortlistData.enquiry?.mobile || 'N/A',
-            businessType: shortlistData.businessType || shortlistData.enquiry?.businessType || 'General Business',
-            businessName: shortlistData.businessName || shortlistData.enquiry?.businessName || 'General Business'
-          }
-        } : {
+        processingFee: createCashfreeApplicationDto.processingFee || 0,
+        purpose: createCashfreeApplicationDto.purpose || 'Business Loan',
+        collateral: createCashfreeApplicationDto.collateral || '',
+        guarantor: createCashfreeApplicationDto.guarantor || '',
+        bankAccount: createCashfreeApplicationDto.bankAccount || '',
+        ifscCode: createCashfreeApplicationDto.ifscCode || '',
+        panCard: createCashfreeApplicationDto.panCard || '',
+        aadharCard: createCashfreeApplicationDto.aadharCard || '',
+        salarySlips: createCashfreeApplicationDto.salarySlips || false,
+        itrReturns: createCashfreeApplicationDto.itrReturns || false,
+        businessProof: createCashfreeApplicationDto.businessProof || false,
+        addressProof: createCashfreeApplicationDto.addressProof || false,
+        remarks: createCashfreeApplicationDto.remarks || '',
+        status: createCashfreeApplicationDto.status || 'PENDING' as CashfreeStatus,
+        submittedById: userId || 1,
+        submittedAt: createCashfreeApplicationDto.appliedAt || new Date(),
+        decisionDate: null,
+        shortlist: {
           id: createCashfreeApplicationDto.shortlistId,
-          name: 'Unknown Client',
-          mobile: 'N/A',
-          businessName: 'General Business',
-          businessType: 'General Business',
-          loanAmount: createCashfreeApplicationDto.loanAmount
+          name: shortlistData?.name || shortlistData?.enquiry?.name || 'Unknown Client',
+          mobile: shortlistData?.mobile || shortlistData?.enquiry?.mobile || 'N/A',
+          businessName: shortlistData?.businessName || shortlistData?.enquiry?.businessName || shortlistData?.businessType || 'General Business',
+          businessType: shortlistData?.businessType || shortlistData?.enquiry?.businessType || 'General Business',
+          loanAmount: shortlistData?.loanAmount || shortlistData?.enquiry?.loanAmount || createCashfreeApplicationDto.loanAmount,
+          enquiry: shortlistData?.enquiry || {
+            id: shortlistData?.enquiryId || shortlistData?.id || 1,
+            name: shortlistData?.name || shortlistData?.enquiry?.name || 'Unknown Client',
+            mobile: shortlistData?.mobile || shortlistData?.enquiry?.mobile || 'N/A',
+            businessType: shortlistData?.businessType || shortlistData?.enquiry?.businessType || 'General Business',
+            businessName: shortlistData?.businessName || shortlistData?.enquiry?.businessName || 'General Business'
+          }
         },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      submittedBy: {
+        id: userId || 1,
+        name: shortlistData?.staff || 'Demo Staff',
+        email: 'staff@demo.com'
+      }
+    };
 
-      this.demoApplications.push(newApplication);
-      await this.savePayments();
+    // Add to file-based storage
+    this.demoApplications.push(mockApplication);
+    this.savePayments();
 
-      this.logger.log('✅ Payment gateway application created successfully:', newApplication.id);
-      return newApplication;
+    // Create notification
+    try {
+      const notificationResponse = await fetch('http://localhost:5002/api/notifications/system/payment-applied', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationId: mockApplication.id,
+          clientName: `Payment gateway application submitted for ${mockApplication.shortlist.name}`,
+          amount: mockApplication.shortlist.loanAmount
+        })
+      });
+      
+      if (notificationResponse.ok) {
+        console.log('✅ Notification created for payment application');
+      }
     } catch (error) {
-      this.logger.error('❌ Error creating payment application:', error);
+      console.log('⚠️ Failed to create payment application notification:', error);
+    }
+
+    // Auto-sync to Supabase for RENDER & VERCEL deployments (non-blocking)
+    const isRenderDeployment = process.env.RENDER === 'true';
+    const isVercelDeployment = process.env.VERCEL === '1';
+    const isProduction = process.env.NODE_ENV === 'production';
+    const deploymentPlatform = isRenderDeployment ? 'RENDER' : isVercelDeployment ? 'VERCEL' : isProduction ? 'PRODUCTION' : 'LOCAL';
+    const shouldSync = isRenderDeployment || isVercelDeployment || isProduction;
+    
+    if (shouldSync) {
+      console.log(`🚀 [${deploymentPlatform}] Auto-syncing payment application to Supabase:`, mockApplication.shortlist.name);
+      this.unifiedSupabaseSync.syncPaymentGateway(mockApplication).catch(error => {
+        console.error(`❌ [${deploymentPlatform}] Failed to sync payment to Supabase:`, error);
+      });
+      console.log(`✅ [${deploymentPlatform}] Payment application auto-sync queued`);
+    } else {
+      console.log('🏠 [LOCAL] Skipping Supabase sync in development mode');
+    }
+
+      return mockApplication;
+    } catch (error) {
+      console.error('❌ Error creating payment application:', error);
       throw error;
     }
   }
 
-  async findAll(user?: User): Promise<CashfreeApplication[]> {
+  async findAll(user?: User) {
+    console.log('🚀 [RENDER] Getting payment applications from file storage, count:', this.demoApplications.length);
+    
     // Ensure data is loaded if storage is empty
     if (this.demoApplications.length === 0) {
+      console.log('⚠️ [RENDER] Storage empty, reloading payment applications...');
       await this.loadPayments();
     }
-
+    
+    // Refresh data from file to ensure latest state
+    this.loadPayments();
+    
     // Ensure all applications have required display fields
     const enhancedApplications = this.demoApplications.map(app => ({
       ...app,
-      displayName: app.shortlist?.name || 'Unknown Client',
-      clientInfo: `${app.shortlist?.name || 'Unknown'} - ${app.shortlist?.businessName || 'Business'}`,
+      displayName: app.name || app.shortlist?.name || 'Unknown Client',
+      clientInfo: `${app.name || 'Unknown'} - ${app.businessName || 'Business'}`,
       statusDisplay: app.status || 'PENDING',
       amountDisplay: app.loanAmount ? `₹${app.loanAmount.toLocaleString()}` : 'N/A'
     }));
-
-    // Sort by creation date (newest first)
-    return enhancedApplications.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    
+    const sortedApplications = enhancedApplications.sort((a, b) => 
+      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
     );
+    
+    console.log('✅ [RENDER] Returning', sortedApplications.length, 'payment applications with real client data');
+    console.log('📊 [RENDER] Sample application names:', sortedApplications.slice(0, 3).map(a => a.name));
+    return sortedApplications;
   }
 
-  async findOne(id: number): Promise<CashfreeApplication> {
+  async findOne(id: number) {
+    console.log('💳 Searching for payment application ID:', id);
+    
+    // Ensure we have the latest data from file
+    this.loadPayments();
+    
     const application = this.demoApplications.find(app => app.id === id);
     
     if (!application) {
-      throw new NotFoundException(`Payment application with ID ${id} not found`);
+      throw new NotFoundException('Payment application not found');
     }
-
+    
     return application;
   }
 
-  async update(id: number, updateCashfreeApplicationDto: UpdateCashfreeApplicationDto): Promise<CashfreeApplication> {
+  async updateStatus(id: number, status: CashfreeStatus, userId: number) {
+    // Force demo mode - update in-memory storage
+    console.log('📝 Using demo mode - updating payment application status');
+    
     const applicationIndex = this.demoApplications.findIndex(app => app.id === id);
     
     if (applicationIndex === -1) {
-      throw new NotFoundException(`Payment application with ID ${id} not found`);
+      throw new NotFoundException('Cashfree application not found');
     }
 
+    // Update the application in memory
     this.demoApplications[applicationIndex] = {
       ...this.demoApplications[applicationIndex],
-      ...updateCashfreeApplicationDto,
-      updatedAt: new Date().toISOString()
+      status,
+      decisionDate: new Date(),
     };
 
-    await this.savePayments();
-    return this.demoApplications[applicationIndex];
-  }
-
-  async updateStatus(id: number, status: string): Promise<CashfreeApplication> {
-    const applicationIndex = this.demoApplications.findIndex(app => app.id === id);
+    const updated = this.demoApplications[applicationIndex];
     
-    if (applicationIndex === -1) {
-      throw new NotFoundException(`Payment application with ID ${id} not found`);
+    // Save to file
+    this.savePayments();
+
+    // Auto-sync to Supabase using unified sync service (non-blocking)
+    try {
+      console.log('🔄 Auto-syncing updated payment application to Supabase:', updated.id);
+      await this.unifiedSupabaseSync.syncPaymentGateway(updated);
+      console.log('✅ Updated payment application synced to Supabase successfully');
+    } catch (error) {
+      console.error('❌ Failed to auto-sync updated payment application to Supabase:', error);
     }
 
-    this.demoApplications[applicationIndex].status = status;
-    this.demoApplications[applicationIndex].updatedAt = new Date().toISOString();
-
-    await this.savePayments();
-    return this.demoApplications[applicationIndex];
-  }
-
-  async remove(id: number): Promise<{ message: string }> {
-    const applicationIndex = this.demoApplications.findIndex(app => app.id === id);
-    
-    if (applicationIndex === -1) {
-      throw new NotFoundException(`Payment application with ID ${id} not found`);
+    // Create notification for payment status update
+    try {
+      const clientName = updated.shortlist?.enquiry?.name || updated.shortlist?.name || 'Unknown Client';
+      const loanAmount = updated.shortlist?.loanAmount || 0;
+      let notificationMessage = '';
+      
+      if (status === 'TRANSACTION_DONE') {
+        notificationMessage = `Payment gateway approved for ${clientName} - ₹${loanAmount.toLocaleString()}`;
+      } else if (status === 'CLOSED') {
+        notificationMessage = `Payment gateway closed for ${clientName} - ₹${loanAmount.toLocaleString()}`;
+      } else if (status === 'PENDING') {
+        notificationMessage = `Payment gateway pending for ${clientName} - ₹${loanAmount.toLocaleString()}`;
+      } else {
+        notificationMessage = `Payment status updated for ${clientName} - ${status}`;
+      }
+      
+      const notificationResponse = await fetch('http://localhost:5002/api/notifications/system/payment-applied', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationId: updated.id,
+          clientName: notificationMessage,
+          amount: loanAmount
+        })
+      });
+      
+      if (notificationResponse.ok) {
+        console.log('✅ Notification created for payment status update');
+      }
+    } catch (error) {
+      console.log('⚠️ Failed to create payment status notification:', error);
     }
 
-    this.demoApplications.splice(applicationIndex, 1);
-    await this.savePayments();
+    return updated;
+  }
 
-    return { message: 'Payment application deleted successfully' };
+  // Private method to integrate with actual Cashfree API
+  private async submitToCashfree(application: any) {
+    // Implementation would go here using Cashfree SDK
+    // This is a placeholder for the actual integration
+    console.log('Submitting to Cashfree:', application.id);
+  }
+
+  // Supabase sync methods
+  private async syncPaymentToSupabase(payment: any): Promise<void> {
+    if (!this.supabaseService) {
+      console.log('⚠️ Supabase service not available, skipping payment sync');
+      return;
+    }
+    
+    try {
+      console.log('🔄 Syncing payment to Supabase:', payment.id);
+      
+      const supabaseData = {
+        id: payment.id,
+        enquiry_id: payment.shortlist?.enquiry?.id || null,
+        shortlist_id: payment.shortlistId,
+        client_name: payment.shortlist?.enquiry?.name || payment.shortlist?.name || 'Unknown',
+        mobile: payment.shortlist?.enquiry?.mobile || '9876543210',
+        email: payment.shortlist?.enquiry?.email || null,
+        business_name: payment.shortlist?.enquiry?.businessName || null,
+        business_type: payment.shortlist?.enquiry?.businessType || null,
+        loan_amount: payment.loanAmount,
+        tenure: payment.tenure,
+        interest_rate: payment.interestRate,
+        processing_fee: payment.processingFee,
+        purpose: payment.purpose,
+        collateral: payment.collateral,
+        guarantor: payment.guarantor,
+        bank_account: payment.bankAccount,
+        ifsc_code: payment.ifscCode,
+        pan_card: payment.panCard,
+        aadhar_card: payment.aadharCard,
+        salary_slips: payment.salarySlips,
+        itr_returns: payment.itrReturns,
+        business_proof: payment.businessProof,
+        address_proof: payment.addressProof,
+        remarks: payment.remarks,
+        status: payment.status || 'PENDING',
+        application_data: JSON.stringify(payment),
+        created_at: payment.submittedAt || new Date(),
+        updated_at: payment.submittedAt || new Date()
+      };
+      
+      const { data, error } = await this.supabaseService.client
+        .from('PaymentGateway')
+        .upsert(supabaseData, { onConflict: 'id' })
+        .select();
+      
+      if (error) {
+        console.error('❌ Supabase payment sync error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Successfully synced payment to Supabase:', data);
+    } catch (error) {
+      console.error('❌ Failed to sync payment to Supabase:', error);
+      // Don't throw error - this is background sync
+    }
+  }
+
+  async syncAllPaymentsToSupabase(): Promise<void> {
+    if (!this.supabaseService) {
+      console.log('⚠️ Supabase service not available, skipping payments sync');
+      return;
+    }
+    
+    console.log('🔄 Syncing all payments to Supabase...');
+    
+    for (const payment of this.demoApplications) {
+      try {
+        await this.syncPaymentToSupabase(payment);
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error(`❌ Failed to sync payment ${payment.id}:`, error);
+      }
+    }
+    
+    console.log('✅ Completed syncing all payments to Supabase');
+  }
+
+  async getPaymentsSyncStatus(): Promise<any> {
+    if (!this.supabaseService) {
+      return {
+        supabaseCount: 0,
+        localCount: this.demoApplications.length,
+        lastSync: null,
+        status: 'service_unavailable',
+        error: 'Supabase service not initialized'
+      };
+    }
+    
+    try {
+      const { count, error } = await this.supabaseService.client
+        .from('PaymentGateway')
+        .select('*', { count: 'exact', head: true });
+      
+      return {
+        supabaseCount: count || 0,
+        localCount: this.demoApplications.length,
+        lastSync: new Date().toISOString(),
+        status: error ? 'error' : 'connected'
+      };
+    } catch (error) {
+      return {
+        supabaseCount: 0,
+        localCount: this.demoApplications.length,
+        lastSync: null,
+        status: 'disconnected',
+        error: error.message
+      };
+    }
+  }
+
+  async remove(id: number, userId: number) {
+    // Force demo mode - remove from in-memory storage
+    console.log('🗑️ Removing payment application from demo storage:', id);
+    
+    const applicationIndex = this.demoApplications.findIndex(app => app.id === id);
+    if (applicationIndex === -1) {
+      throw new NotFoundException('Payment application not found');
+    }
+
+    // Remove from file-based storage
+    const removedApplication = this.demoApplications.splice(applicationIndex, 1)[0];
+    this.savePayments();
+    
+    console.log('✅ Removed payment application from demo storage:', removedApplication.shortlist?.name || 'Unknown Client');
+    
+    // Auto-sync deletion to Supabase (non-blocking)
+    try {
+      console.log('🔄 Auto-syncing payment application deletion to Supabase:', removedApplication.id);
+      if (this.supabaseService) {
+        await this.supabaseService.client
+          .from('payment_gateways')
+          .delete()
+          .eq('id', id);
+        console.log('✅ Payment application deleted from Supabase successfully');
+      }
+    } catch (error) {
+      console.error('❌ Failed to auto-sync payment application deletion to Supabase:', error);
+    }
+    
+    // Create notification for deletion
+    try {
+      const clientName = removedApplication.shortlist?.name || 'Unknown Client';
+      const notificationResponse = await fetch('http://localhost:5002/api/notifications/system/payment-deleted', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationId: removedApplication.id,
+          clientName: `Payment application deleted for ${clientName}`,
+          amount: removedApplication.loanAmount
+        })
+      });
+      
+      if (notificationResponse.ok) {
+        console.log('✅ Notification created for payment application deletion');
+      }
+    } catch (error) {
+      console.log('⚠️ Failed to create payment deletion notification:', error);
+    }
+    
+    return { 
+      message: 'Payment application deleted successfully', 
+      deletedApplication: {
+        id: removedApplication.id,
+        clientName: removedApplication.shortlist?.name || 'Unknown Client',
+        loanAmount: removedApplication.loanAmount
+      }
+    };
+  }
+
+  // Method to clear Supabase and sync all current localhost payments
+  async clearAndSyncAllPaymentsToSupabase(): Promise<{ cleared: number; synced: number; errors: number }> {
+    if (!this.supabaseService) {
+      console.log('⚠️ Supabase service not available');
+      return { cleared: 0, synced: 0, errors: 0 };
+    }
+
+    console.log('🧹 Clearing existing payments from Supabase...');
+    
+    let clearedCount = 0;
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Step 1: Clear existing payments from Supabase
+      const { error: deleteError } = await this.supabaseService.client
+        .from('PaymentGateway')
+        .delete()
+        .neq('id', 0); // Delete all records
+      
+      if (deleteError) {
+        console.error('❌ Error clearing Supabase payments:', deleteError);
+      } else {
+        console.log('✅ Cleared all existing payments from Supabase');
+        clearedCount = 1; // Indicate successful clear
+      }
+
+      // Step 2: Sync all current localhost payments to Supabase
+      console.log('🔄 Syncing', this.demoApplications.length, 'localhost payments to Supabase...');
+      
+      for (const payment of this.demoApplications) {
+        try {
+          await this.syncPaymentToSupabase(payment);
+          syncedCount++;
+          console.log(`✅ Synced payment ${payment.id}: ${payment.shortlist?.name || 'Unknown Client'}`);
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error(`❌ Failed to sync payment ${payment.id}:`, error);
+          errorCount++;
+        }
+      }
+      
+      console.log(`🎉 Payment sync completed: ${syncedCount} synced, ${errorCount} errors`);
+      return { cleared: clearedCount, synced: syncedCount, errors: errorCount };
+      
+    } catch (error) {
+      console.error('❌ Error in clearAndSyncAllPaymentsToSupabase:', error);
+      return { cleared: 0, synced: syncedCount, errors: errorCount + 1 };
+    }
+  }
+
+  // Clear all payment applications
+  async clearAllPayments(): Promise<{ message: string; cleared: number }> {
+    const clearedCount = this.demoApplications.length;
+    this.demoApplications = [];
+    this.savePayments();
+    
+    console.log('🗑️ Cleared all payment applications from storage:', clearedCount);
+    return {
+      message: `Cleared ${clearedCount} payment applications from storage`,
+      cleared: clearedCount
+    };
+  }
+
+
+  // Enhanced sync all payments to Supabase with return value
+  async syncAllPaymentsToSupabaseEnhanced(): Promise<{ message: string; synced: number; errors: number }> {
+    if (!this.supabaseService) {
+      throw new Error('Supabase service not available');
+    }
+
+    let synced = 0;
+    let errors = 0;
+
+    console.log('🔄 Starting bulk sync of', this.demoApplications.length, 'payment applications to Supabase');
+
+    for (const payment of this.demoApplications) {
+      try {
+        await this.syncPaymentToSupabase(payment);
+        synced++;
+        // Add delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('❌ Failed to sync payment:', payment.id, error);
+        errors++;
+      }
+    }
+
+    console.log('✅ Bulk payment sync completed:', synced, 'synced,', errors, 'errors');
+    
+    return {
+      message: `Synced ${synced} payment applications to Supabase (${errors} errors)`,
+      synced,
+      errors
+    };
+  }
+
+  // Clear Supabase payment applications and sync current localhost data
+  async clearSupabaseAndSyncLocal(): Promise<{ message: string; cleared: number; synced: number; errors: number }> {
+    if (!this.supabaseService) {
+      throw new Error('Supabase service not available');
+    }
+
+    console.log('🧹 Clearing existing payment applications from Supabase...');
+    
+    let clearedCount = 0;
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Step 1: Clear existing payment applications from Supabase
+      const { error: deleteError } = await this.supabaseService.client
+        .from('PaymentGateway')
+        .delete()
+        .neq('id', 0); // Delete all records
+      
+      if (deleteError) {
+        console.error('❌ Error clearing Supabase payment applications:', deleteError);
+      } else {
+        console.log('✅ Cleared all existing payment applications from Supabase');
+        clearedCount = 1; // Indicate successful clear
+      }
+
+      // Step 2: Sync all current localhost payment applications to Supabase
+      console.log('🔄 Syncing', this.demoApplications.length, 'localhost payment applications to Supabase...');
+      
+      for (const payment of this.demoApplications) {
+        try {
+          await this.syncPaymentToSupabase(payment);
+          syncedCount++;
+          console.log(`✅ Synced payment ${payment.id}: ${payment.shortlist?.name || 'Unknown Client'}`);
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          console.error(`❌ Failed to sync payment ${payment.id}:`, error);
+          errorCount++;
+        }
+      }
+      
+      console.log(`🎉 Payment clear and sync completed: ${syncedCount} synced, ${errorCount} errors`);
+      return { 
+        message: `Cleared Supabase and synced ${syncedCount} payment applications (${errorCount} errors)`,
+        cleared: clearedCount, 
+        synced: syncedCount, 
+        errors: errorCount 
+      };
+      
+    } catch (error) {
+      console.error('❌ Error in clearSupabaseAndSyncLocal:', error);
+      return { 
+        message: 'Error during clear and sync operation',
+        cleared: 0, 
+        synced: syncedCount, 
+        errors: errorCount + 1 
+      };
+    }
   }
 }

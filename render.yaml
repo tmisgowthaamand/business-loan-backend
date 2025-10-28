@@ -4,9 +4,9 @@ services:
     env: node
     region: oregon
     plan: free
-    buildCommand: npm ci && npx prisma generate && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
-    healthCheckPath: /api/health/render-ready
+    healthCheckPath: /api/staff/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
@@ -18,17 +18,6 @@ services:
       # Disable Supabase sync to prevent schema errors
       - key: DISABLE_SUPABASE_SYNC
         value: true
-      # Performance Optimizations
-      - key: ENABLE_CACHING
-        value: true
-      - key: CACHE_TTL
-        value: 300000
-      - key: DATA_SYNC_INTERVAL
-        value: 60000
-      - key: ENABLE_FILE_PERSISTENCE
-        value: true
-      - key: LOG_LEVEL
-        value: log
       # SendGrid Configuration (Primary Email Service)
       # IMPORTANT: Replace with your actual SendGrid API key from https://app.sendgrid.com/settings/api_keys
       - key: SENDGRID_API_KEY

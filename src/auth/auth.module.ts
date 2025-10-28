@@ -1,24 +1,32 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { AuthService } from './auth.service';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
-import { JwtStrategy } from './jwt.strategy';
-import { StaffModule } from '../staff/staff.module';
+import { DemoAuthController } from './demo-auth.controller';
+import { AuthService } from './auth.service';
+import { SupabaseAuthService } from './supabase-auth.service';
+import { JwtStrategy } from './strategy';
+import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseModule } from '../supabase/supabase.module';
+import { StaffModule } from '../staff/staff.module';
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key',
-      signOptions: { expiresIn: '24h' },
+    PassportModule,
+    forwardRef(() => SupabaseModule),
+    forwardRef(() => StaffModule),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (config: ConfigService) => ({
+        secret: config.get('JWT_SECRET') || 'demo-secret-key',
+        signOptions: { expiresIn: '1d' },
+      }),
+      inject: [ConfigService],
     }),
-    StaffModule,
-    SupabaseModule,
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  controllers: [DemoAuthController], // Using demo controller for testing
+  providers: [AuthService, SupabaseAuthService, JwtStrategy, PrismaService],
+  exports: [AuthService, JwtStrategy], // Export services that other modules might need
 })
 export class AuthModule {}

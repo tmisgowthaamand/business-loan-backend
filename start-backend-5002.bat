@@ -1,0 +1,9 @@
+@echo off
+echo Starting Backend Server on Port 5002...
+echo.
+echo Killing any existing Node processes...
+taskkill /f /im node.exe >nul 2>&1
+echo.
+echo Starting fresh backend server...
+npm run start:dev
+pause
