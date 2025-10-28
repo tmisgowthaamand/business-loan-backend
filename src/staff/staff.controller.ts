@@ -872,6 +872,34 @@ export class StaffController {
     }
   }
 
+  @Post('test-email')
+  async testEmailDelivery(@Body() body: { email: string; name?: string }) {
+    try {
+      console.log('📧 Testing professional email delivery to:', body.email);
+      
+      // Import the professional email service
+      const { ProfessionalEmailService } = await import('./professional-email.service');
+      const emailService = new ProfessionalEmailService(this.configService);
+      
+      const result = await emailService.testEmailDelivery(
+        body.email,
+        body.name || 'Test User'
+      );
+      
+      return {
+        message: 'Email delivery test completed',
+        result,
+        timestamp: new Date().toISOString(),
+        instructions: result.success ? 
+          'Check your inbox (not spam folder) for the test email' :
+          'Email failed to send. Check Gmail configuration.'
+      };
+    } catch (error) {
+      console.error('Error testing email delivery:', error);
+      throw new BadRequestException(`Email test failed: ${error.message}`);
+    }
+  }
+
   @Get('activate-page/:id')
   async showActivationPage(@Param('id') id: string, @Res() res: any) {
     try {
