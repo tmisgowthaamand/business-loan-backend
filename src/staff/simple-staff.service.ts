@@ -54,7 +54,7 @@ export class SimpleStaffService {
         id: 1,
         name: 'Admin User',
         email: 'admin@gmail.com',
-        password: 'admin123',
+        password: '12345678',
         role: StaffRole.ADMIN,
         status: StaffStatus.ACTIVE,
         hasAccess: true,
@@ -64,6 +64,66 @@ export class SimpleStaffService {
       },
       {
         id: 2,
+        name: 'Nunciya',
+        email: 'tmsnunciya59@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 3,
+        name: 'Dinesh',
+        email: 'dinesh@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 4,
+        name: 'Pankil',
+        email: 'govindamarketing9998@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 5,
+        name: 'Harish',
+        email: 'newacttmis@gmail.com',
+        password: '12345678',
+        role: StaffRole.ADMIN,
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 6,
+        name: 'Venkat',
+        email: 'gowthaamaneswar1998@gmail.com',
+        password: '12345678',
+        role: StaffRole.EMPLOYEE,
+        status: StaffStatus.ACTIVE,
+        hasAccess: true,
+        verified: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 7,
         name: 'Perivi',
         email: 'gowthaamankrishna1998@gmail.com',
         password: '12345678',
@@ -77,9 +137,9 @@ export class SimpleStaffService {
     ];
 
     this.staff = defaultStaff;
-    this.nextId = 3;
+    this.nextId = 8;
     this.saveStaffToFile();
-    this.logger.log('✅ Default staff created');
+    this.logger.log('✅ Default 7 staff members created (5 Admin, 2 Employee)');
   }
 
   private loadStaffFromFile() {
@@ -308,6 +368,30 @@ export class SimpleStaffService {
     } catch (error) {
       this.logger.error(`❌ Error sending verification email for staff ${staffId}:`, error);
       return false;
+    }
+  }
+
+  async resetToDefaultStaff(): Promise<{ staff: Omit<SimpleStaff, 'password'>[], count: number }> {
+    try {
+      this.logger.log('🔄 Resetting staff to 7 default members...');
+      
+      // Clear existing staff and recreate defaults
+      this.staff = [];
+      this.nextId = 1;
+      this.createDefaultStaff();
+      
+      // Return staff without passwords
+      const staffWithoutPasswords = this.staff.map(({ password, ...staff }) => staff);
+      
+      this.logger.log(`✅ Staff reset complete: ${this.staff.length} default members created`);
+      
+      return {
+        staff: staffWithoutPasswords,
+        count: this.staff.length
+      };
+    } catch (error) {
+      this.logger.error('❌ Error resetting staff to defaults:', error);
+      throw error;
     }
   }
 }

@@ -216,4 +216,20 @@ export class SimpleStaffController {
       ]
     };
   }
+
+  @Post('reset-to-default')
+  async resetToDefaultStaff() {
+    try {
+      const result = await this.simpleStaffService.resetToDefaultStaff();
+      
+      return {
+        message: 'Staff reset to 7 default members successfully',
+        staff: result.staff,
+        count: result.count,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      throw new BadRequestException(`Failed to reset staff: ${error.message}`);
+    }
+  }
 }
