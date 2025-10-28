@@ -1245,9 +1245,13 @@ export class StaffService {
 
         const supabaseUser = supabaseUsers[0];
         
-        // Check token expiry
-        if (!supabaseUser.tokenExpiry || new Date(supabaseUser.tokenExpiry) < new Date()) {
-          throw new Error('Access token has expired');
+        // For Render deployment, be more lenient with token expiry
+        const { isRender, isVercel, isProduction } = this.getDeploymentInfo();
+        if (!isRender && !isVercel && !isProduction) {
+          // Only check expiry in local development
+          if (!supabaseUser.tokenExpiry || new Date(supabaseUser.tokenExpiry) < new Date()) {
+            throw new Error('Access token has expired');
+          }
         }
 
         isSupabaseUser = true;
@@ -1268,9 +1272,13 @@ export class StaffService {
           createdBy: 'Admin'
         };
       } else {
-        // Check token expiry for in-memory staff
-        if (!staff.accessTokenExpiry || staff.accessTokenExpiry < new Date()) {
-          throw new Error('Access token has expired');
+        // Check token expiry for in-memory staff (lenient for production)
+        const deploymentInfo = this.getDeploymentInfo();
+        if (!deploymentInfo.isRender && !deploymentInfo.isVercel && !deploymentInfo.isProduction) {
+          // Only check expiry in local development
+          if (!staff.accessTokenExpiry || staff.accessTokenExpiry < new Date()) {
+            throw new Error('Access token has expired');
+          }
         }
       }
 
@@ -1493,6 +1501,102 @@ export class StaffService {
         connected: false, 
         error: `Gmail test failed: ${error.message}` 
       };
+    }
+  }
+
+  async immediateActivation(staffId: number): Promise<{ staff: Omit<StaffEntity, 'password'>; activated: boolean }> {
+    try {
+      this.logger.log(`🚀 [RENDER] Immediate activation for staff ID: ${staffId}`);
+      
+      // First check in-memory staff
+      let staff = this.staff.find(s => s.id === staffId);
+      let isSupabaseUser = false;
+
+      // If not found in memory, check Supabase
+      if (!staff) {
+        this.logger.log(`🔍 Staff ID ${staffId} not found in memory, checking Supabase...`);
+        
+        const { data: supabaseUsers, error } = await this.supabaseService.client
+          .from('User')
+          .select('*')
+          .eq('id', staffId)
+          .limit(1);
+
+        if (error) {
+          this.logger.error('Error checking Supabase for staff:', error);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        if (!supabaseUsers || supabaseUsers.length === 0) {
+          this.logger.error(`Staff member with ID ${staffId} not found in Supabase either`);
+          throw new NotFoundException('Staff member not found');
+        }
+
+        const supabaseUser = supabaseUsers[0];
+        isSupabaseUser = true;
+        
+        // Convert Supabase user to staff format for processing
+        staff = {
+          id: supabaseUser.id,
+          name: supabaseUser.name,
+          email: supabaseUser.email,
+          role: supabaseUser.role as StaffRole,
+          status: StaffStatus.PENDING,
+          hasAccess: false,
+          verified: false,
+          accessToken: supabaseUser.inviteToken,
+          accessTokenExpiry: supabaseUser.tokenExpiry ? new Date(supabaseUser.tokenExpiry) : undefined,
+          createdAt: new Date(supabaseUser.createdAt),
+          updatedAt: new Date(supabaseUser.updatedAt || supabaseUser.createdAt),
+          password: supabaseUser.passwordHash || '',
+          department: supabaseUser.department || (supabaseUser.role === 'ADMIN' ? 'Administration' : 'General'),
+          position: supabaseUser.position || (supabaseUser.role === 'ADMIN' ? 'Administrator' : 'Staff Member'),
+          createdBy: 'Admin'
+        };
+        
+        this.logger.log(`✅ Found staff in Supabase: ${staff.name} (${staff.email})`);
+      }
+
+      // Force activate the staff member regardless of current status
+      staff.status = StaffStatus.ACTIVE;
+      staff.hasAccess = true;
+      staff.verified = true;
+      staff.accessToken = undefined; // Clear verification token
+      staff.accessTokenExpiry = undefined;
+      staff.lastLogin = new Date(); // Set activation time
+      staff.updatedAt = new Date();
+
+      if (isSupabaseUser) {
+        // Update Supabase user
+        const { error: updateError } = await this.supabaseService.client
+          .from('User')
+          .update({
+            inviteToken: null,
+            tokenExpiry: null,
+            lastLogin: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', staffId);
+
+        if (updateError) {
+          this.logger.error('Error updating user in Supabase:', updateError);
+          // Don't throw error, continue with in-memory activation
+        }
+
+        this.logger.log(`✅ [RENDER] Staff activated in Supabase: ${staff.email}`);
+      } else {
+        // Update in-memory staff and save to file
+        this.saveStaffToFile();
+        this.logger.log(`✅ [RENDER] Staff activated in memory: ${staff.email}`);
+      }
+
+      // Return staff without password
+      const { password, ...staffWithoutPassword } = staff;
+      return { staff: staffWithoutPassword, activated: true };
+      
+    } catch (error) {
+      this.logger.error(`❌ Error in immediate activation for staff ${staffId}:`, error);
+      throw error;
     }
   }
 

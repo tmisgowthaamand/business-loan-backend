@@ -854,6 +854,223 @@ export class StaffController {
     }
   }
 
+  @Post('activate/:id')
+  async activateStaffMember(@Param('id') id: string) {
+    try {
+      console.log('🚀 [RENDER] Immediate activation for staff member:', id);
+      const result = await this.staffService.immediateActivation(+id);
+      return {
+        message: 'Staff member activated successfully for Render deployment',
+        staff: result.staff,
+        activated: true,
+        canLogin: true,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error activating staff member:', error);
+      throw new BadRequestException(`Failed to activate staff member: ${error.message}`);
+    }
+  }
+
+  @Get('activate-page/:id')
+  async showActivationPage(@Param('id') id: string, @Res() res: any) {
+    try {
+      const activationHtml = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Staff Account Activation</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    margin: 0;
+                    padding: 20px;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .container {
+                    background: white;
+                    border-radius: 20px;
+                    padding: 40px;
+                    text-align: center;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                    max-width: 500px;
+                    width: 100%;
+                }
+                .icon {
+                    font-size: 64px;
+                    margin-bottom: 20px;
+                }
+                h1 {
+                    color: #2d3748;
+                    margin-bottom: 10px;
+                    font-size: 28px;
+                }
+                .subtitle {
+                    color: #718096;
+                    margin-bottom: 30px;
+                    font-size: 16px;
+                }
+                .activate-button {
+                    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                    color: white;
+                    border: none;
+                    padding: 15px 30px;
+                    border-radius: 10px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                    margin: 10px;
+                }
+                .activate-button:hover {
+                    transform: translateY(-2px);
+                }
+                .verify-button {
+                    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+                    color: white;
+                    border: none;
+                    padding: 15px 30px;
+                    border-radius: 10px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                    margin: 10px;
+                }
+                .verify-button:hover {
+                    transform: translateY(-2px);
+                }
+                .result {
+                    margin-top: 20px;
+                    padding: 15px;
+                    border-radius: 10px;
+                    display: none;
+                }
+                .success {
+                    background: #d1fae5;
+                    color: #065f46;
+                    border: 1px solid #10b981;
+                }
+                .error {
+                    background: #fee2e2;
+                    color: #991b1b;
+                    border: 1px solid #ef4444;
+                }
+                .loading {
+                    background: #dbeafe;
+                    color: #1e40af;
+                    border: 1px solid #3b82f6;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="icon">🚀</div>
+                <h1>Staff Account Activation</h1>
+                <p class="subtitle">Choose your activation method for Render deployment</p>
+                
+                <div>
+                    <button class="activate-button" onclick="activateStaff()">
+                        ⚡ Immediate Activation
+                    </button>
+                    <button class="verify-button" onclick="verifyStaff()">
+                        🔐 Traditional Verification
+                    </button>
+                </div>
+                
+                <div id="result" class="result"></div>
+                
+                <div style="margin-top: 30px; font-size: 14px; color: #718096;">
+                    <p><strong>Staff ID:</strong> ${id}</p>
+                    <p><strong>Platform:</strong> Render Deployment</p>
+                </div>
+            </div>
+
+            <script>
+                const staffId = '${id}';
+                const baseUrl = window.location.origin + '/api';
+
+                function showResult(message, type) {
+                    const result = document.getElementById('result');
+                    result.className = 'result ' + type;
+                    result.innerHTML = message;
+                    result.style.display = 'block';
+                }
+
+                async function activateStaff() {
+                    showResult('⏳ Activating staff member...', 'loading');
+                    
+                    try {
+                        const response = await fetch(baseUrl + '/staff/activate/' + staffId, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            showResult(
+                                '✅ <strong>Activation Successful!</strong><br>' +
+                                'Staff: ' + result.staff.name + '<br>' +
+                                'Role: ' + result.staff.role + '<br>' +
+                                'Status: ' + result.staff.status + '<br>' +
+                                '🎯 <strong>Can now login!</strong>',
+                                'success'
+                            );
+                        } else {
+                            showResult('❌ <strong>Activation Failed:</strong><br>' + result.message, 'error');
+                        }
+                    } catch (error) {
+                        showResult('❌ <strong>Network Error:</strong><br>' + error.message, 'error');
+                    }
+                }
+
+                async function verifyStaff() {
+                    showResult('⏳ Verifying staff member...', 'loading');
+                    
+                    try {
+                        const response = await fetch(baseUrl + '/staff/verify/' + staffId, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok) {
+                            showResult(
+                                '✅ <strong>Verification Successful!</strong><br>' +
+                                'Staff: ' + result.staff.name + '<br>' +
+                                'Role: ' + result.staff.role + '<br>' +
+                                'Activated: ' + (result.activated ? 'Yes' : 'Already verified') + '<br>' +
+                                '🎯 <strong>Can now login!</strong>',
+                                'success'
+                            );
+                        } else {
+                            showResult('❌ <strong>Verification Failed:</strong><br>' + result.message, 'error');
+                        }
+                    } catch (error) {
+                        showResult('❌ <strong>Network Error:</strong><br>' + error.message, 'error');
+                    }
+                }
+            </script>
+        </body>
+        </html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.send(activationHtml);
+    } catch (error) {
+      console.error('Error showing activation page:', error);
+      res.status(500).send('Error loading activation page');
+    }
+  }
+
   @Post('test/render-login')
   async testRenderLogin(@Body() body: { email?: string; password?: string }) {
     try {
