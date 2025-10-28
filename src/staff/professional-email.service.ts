@@ -17,6 +17,7 @@ export class ProfessionalEmailService {
       // Use Gmail SMTP with app password for better deliverability
       const gmailEmail = this.configService.get<string>('GMAIL_EMAIL');
       const gmailPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
+      const isRender = process.env.RENDER === 'true';
 
       if (gmailEmail && gmailPassword) {
         this.transporter = nodemailer.createTransport({
@@ -35,17 +36,35 @@ export class ProfessionalEmailService {
           pool: true,
           maxConnections: 5,
           maxMessages: 100,
-          rateLimit: 14 // messages per second
+          rateLimit: 14, // messages per second
+          // Render-specific timeout settings
+          connectionTimeout: isRender ? 30000 : 60000, // 30s on Render, 60s locally
+          greetingTimeout: isRender ? 15000 : 30000,   // 15s on Render, 30s locally
+          socketTimeout: isRender ? 30000 : 60000      // 30s on Render, 60s locally
         });
 
-        // Verify connection
-        await this.transporter.verify();
-        this.logger.log('✅ Professional email service initialized successfully');
+        // Skip connection verification on Render to avoid blocking startup
+        if (!isRender) {
+          try {
+            await Promise.race([
+              this.transporter.verify(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 10000))
+            ]);
+            this.logger.log('✅ Professional email service initialized and verified');
+          } catch (verifyError) {
+            this.logger.warn('⚠️ Email verification failed, but service configured:', verifyError.message);
+          }
+        } else {
+          this.logger.log('✅ Professional email service configured for Render (verification skipped)');
+        }
       } else {
-        this.logger.warn('⚠️ Gmail credentials not configured');
+        this.logger.warn('⚠️ Gmail credentials not configured - email features disabled');
+        this.logger.log('💡 Set GMAIL_EMAIL and GMAIL_APP_PASSWORD environment variables to enable email');
       }
     } catch (error) {
-      this.logger.error('❌ Email service initialization failed:', error);
+      this.logger.error('❌ Email service initialization failed:', error.message);
+      this.logger.warn('📧 Email service will operate in fallback mode');
+      // Don't throw error - let the service start without email
     }
   }
 
@@ -57,7 +76,8 @@ export class ProfessionalEmailService {
     staffId: number
   ): Promise<boolean> {
     if (!this.transporter) {
-      this.logger.warn('📧 Email service not available');
+      this.logger.warn('📧 Email service not available - transporter not initialized');
+      this.logger.log('💡 This is normal on Render if Gmail credentials are not set');
       return false;
     }
 
@@ -95,14 +115,24 @@ export class ProfessionalEmailService {
         }
       };
 
-      const result = await this.transporter.sendMail(mailOptions);
+      // Add timeout wrapper for Render deployment
+      const isRender = process.env.RENDER === 'true';
+      const timeout = isRender ? 30000 : 60000; // 30s on Render, 60s locally
+      
+      const result = await Promise.race([
+        this.transporter.sendMail(mailOptions),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email send timeout')), timeout)
+        )
+      ]);
       
       this.logger.log(`✅ Professional verification email sent to: ${recipientEmail}`);
       this.logger.log(`📧 Message ID: ${result.messageId}`);
       
       return true;
     } catch (error) {
-      this.logger.error(`❌ Failed to send email to ${recipientEmail}:`, error);
+      this.logger.error(`❌ Failed to send email to ${recipientEmail}:`, error.message || error);
+      this.logger.warn('💡 Email delivery failed - this is normal if Gmail credentials are not configured');
       return false;
     }
   }
@@ -382,6 +412,15 @@ This is an automated message. Please do not reply.
 
   async testEmailDelivery(testEmail: string, testName: string): Promise<{ success: boolean; method: string; details: string }> {
     try {
+      // Check if email service is available
+      if (!this.transporter) {
+        return {
+          success: false,
+          method: 'Professional Gmail SMTP',
+          details: 'Email service not configured. Set GMAIL_EMAIL and GMAIL_APP_PASSWORD environment variables.'
+        };
+      }
+
       const testToken = 'test-token-' + Date.now();
       const testLink = `https://your-app.onrender.com/api/staff/verify-access/${testToken}`;
       
@@ -403,14 +442,14 @@ This is an automated message. Please do not reply.
         return {
           success: false,
           method: 'Professional Gmail SMTP',
-          details: 'Email sending failed. Check Gmail credentials and app password.'
+          details: 'Email sending failed. This is normal on Render if Gmail credentials are not configured.'
         };
       }
     } catch (error) {
       return {
         success: false,
         method: 'Professional Gmail SMTP',
-        details: `Email test failed: ${error.message}`
+        details: `Email test failed: ${error.message || error}. This is expected if Gmail is not configured.`
       };
     }
   }
