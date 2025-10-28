@@ -1726,9 +1726,19 @@ export class StaffService {
         this.logger.log(`📧 Found staff in Supabase: ${staff.name} (${staff.email})`);
       }
 
-      // Check if already verified
+      // Check if already verified and doesn't need re-verification
       if (staff.status === StaffStatus.ACTIVE && !staff.accessToken) {
-        throw new Error('Staff member is already verified and active');
+        this.logger.warn(`📧 Staff member ${staff.name} (${staff.email}) is already verified and active`);
+        this.logger.log(`📧 Returning existing staff data without sending email`);
+        
+        // Return the staff data without sending email
+        const { password, ...staffWithoutPassword } = staff;
+        return { staff: staffWithoutPassword, emailSent: false };
+      }
+      
+      // Allow re-verification for ACTIVE users with tokens (common in Render deployment)
+      if (staff.status === StaffStatus.ACTIVE && staff.accessToken) {
+        this.logger.log(`📧 Staff member ${staff.name} is ACTIVE but has pending token - allowing re-verification`);
       }
 
       // Generate new access token

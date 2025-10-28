@@ -981,10 +981,43 @@ export class StaffController {
   @Post('resend-verification/:id')
   async resendVerificationEmail(@Param('id') id: string) {
     try {
-      return this.staffService.resendVerificationEmail(+id);
+      console.log(`📧 Resending verification email for staff ID: ${id}`);
+      const result = await this.staffService.resendVerificationEmail(+id);
+      
+      return {
+        message: result.emailSent ? 'Verification email sent successfully' : 'Staff member already verified - no email sent',
+        staff: result.staff,
+        emailSent: result.emailSent,
+        timestamp: new Date().toISOString()
+      };
     } catch (error) {
       console.error('Error resending verification email:', error);
-      throw new BadRequestException(`Failed to resend verification email: ${error.message}`);
+      
+      // Handle specific error cases
+      if (error.message.includes('already verified and active')) {
+        throw new BadRequestException({
+          message: 'Staff member already verified',
+          details: 'This staff member is already verified and active. No verification email is needed.',
+          code: 'ALREADY_VERIFIED',
+          staffId: +id
+        });
+      }
+      
+      if (error.message.includes('not found')) {
+        throw new BadRequestException({
+          message: 'Staff member not found',
+          details: error.message,
+          code: 'STAFF_NOT_FOUND',
+          staffId: +id
+        });
+      }
+      
+      throw new BadRequestException({
+        message: 'Failed to resend verification email',
+        details: error.message,
+        code: 'RESEND_FAILED',
+        staffId: +id
+      });
     }
   }
 
