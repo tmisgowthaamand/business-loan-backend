@@ -1,13 +1,9 @@
 import { Controller, Post, Body, Get, Param, HttpException, HttpStatus } from '@nestjs/common';
 import { SupabaseAuthService, LoginDto } from './supabase-auth.service';
-import { StaffService } from '../staff/staff.service';
 
 @Controller('auth')
 export class DemoAuthController {
-  constructor(
-    private readonly authService: SupabaseAuthService,
-    private readonly staffService: StaffService
-  ) {}
+  constructor(private readonly authService: SupabaseAuthService) {}
 
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
@@ -39,27 +35,6 @@ export class DemoAuthController {
             role: demoUser.role
           }
         };
-      }
-
-      // Check newly created staff members from StaffService
-      console.log('🔍 Checking newly created staff members...');
-      try {
-        const authResult = await this.staffService.authenticateStaff(loginDto.email, loginDto.password);
-        
-        if (authResult) {
-          console.log('✅ Staff member login successful for:', loginDto.email);
-          return {
-            access_token: authResult.authToken,
-            user: {
-              id: authResult.staff.id,
-              email: authResult.staff.email,
-              name: authResult.staff.name,
-              role: authResult.staff.role
-            }
-          };
-        }
-      } catch (staffError) {
-        console.log('⚠️ Error checking staff members:', staffError.message);
       }
 
       // Try the service if direct demo fails

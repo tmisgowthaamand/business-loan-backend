@@ -360,11 +360,46 @@ export class StaffController {
         message: 'Staff member created successfully',
         staff: result.staff,
         accessLinkSent: result.emailSent,
+        verificationRequired: result.verificationRequired,
         timestamp: new Date().toISOString()
       };
     } catch (error) {
       console.error('Error creating staff:', error);
-      throw new BadRequestException(`Failed to create staff: ${error.message}`);
+      
+      // Handle specific error cases with proper error codes
+      if (error.message.includes('Email already exists')) {
+        throw new BadRequestException({
+          message: 'Email already exists',
+          details: 'This email address is already registered. Please use a different email address.',
+          code: 'EMAIL_EXISTS',
+          email: createStaffDto.email
+        });
+      }
+      
+      if (error.message.includes('Invalid email format')) {
+        throw new BadRequestException({
+          message: 'Invalid email format',
+          details: error.message,
+          code: 'INVALID_EMAIL',
+          email: createStaffDto.email
+        });
+      }
+      
+      if (error.message.includes('Access denied')) {
+        throw new BadRequestException({
+          message: 'Access denied',
+          details: error.message,
+          code: 'ACCESS_DENIED'
+        });
+      }
+      
+      // Generic error
+      throw new BadRequestException({
+        message: 'Failed to create staff member',
+        details: error.message,
+        code: 'CREATE_FAILED',
+        email: createStaffDto.email
+      });
     }
   }
 
@@ -461,16 +496,48 @@ export class StaffController {
   async deleteStaff(@Param('id') id: string) {
     try {
       console.log('🗑️ Deleting staff member:', id);
+      const staffId = parseInt(id);
+      
       // Pass admin@gmail.com as the current user since only this user can manage staff
-      await this.staffService.deleteStaff(parseInt(id), 'admin@gmail.com');
+      await this.staffService.deleteStaff(staffId, 'admin@gmail.com');
       return {
         message: 'Staff member deleted successfully',
-        id: parseInt(id),
+        id: staffId,
         timestamp: new Date().toISOString()
       };
     } catch (error) {
       console.error('Error deleting staff member:', error);
-      throw new BadRequestException(`Failed to delete staff member: ${error.message}`);
+      
+      // If it's already a BadRequestException, re-throw it
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Handle specific error cases
+      if (error.message.includes('Cannot delete system administrator')) {
+        throw new BadRequestException({
+          message: 'Cannot delete system administrator',
+          details: error.message,
+          code: 'PROTECTED_ACCOUNT',
+          staffId: parseInt(id)
+        });
+      }
+      
+      if (error.message.includes('assigned enquiries') || error.message.includes('assigned records')) {
+        throw new BadRequestException({
+          message: 'Cannot delete staff member',
+          details: error.message,
+          code: 'HAS_DEPENDENCIES',
+          staffId: parseInt(id)
+        });
+      }
+      
+      throw new BadRequestException({
+        message: 'Failed to delete staff member',
+        details: error.message,
+        code: 'DELETE_FAILED',
+        staffId: parseInt(id)
+      });
     }
   }
 
@@ -851,251 +918,6 @@ export class StaffController {
     } catch (error) {
       console.error('Error verifying staff member:', error);
       throw new BadRequestException(`Failed to verify staff member: ${error.message}`);
-    }
-  }
-
-  @Post('activate/:id')
-  async activateStaffMember(@Param('id') id: string) {
-    try {
-      console.log('🚀 [RENDER] Immediate activation for staff member:', id);
-      const result = await this.staffService.immediateActivation(+id);
-      return {
-        message: 'Staff member activated successfully for Render deployment',
-        staff: result.staff,
-        activated: true,
-        canLogin: true,
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      console.error('Error activating staff member:', error);
-      throw new BadRequestException(`Failed to activate staff member: ${error.message}`);
-    }
-  }
-
-  @Post('test-email')
-  async testEmailDelivery(@Body() body: { email: string; name?: string }) {
-    try {
-      console.log('📧 Testing professional email delivery to:', body.email);
-      
-      // Import the professional email service
-      const { ProfessionalEmailService } = await import('./professional-email.service');
-      const emailService = new ProfessionalEmailService(this.configService);
-      
-      const result = await emailService.testEmailDelivery(
-        body.email,
-        body.name || 'Test User'
-      );
-      
-      return {
-        message: 'Email delivery test completed',
-        result,
-        timestamp: new Date().toISOString(),
-        instructions: result.success ? 
-          'Check your inbox (not spam folder) for the test email' :
-          'Email failed to send. Check Gmail configuration.'
-      };
-    } catch (error) {
-      console.error('Error testing email delivery:', error);
-      throw new BadRequestException(`Email test failed: ${error.message}`);
-    }
-  }
-
-  @Get('activate-page/:id')
-  async showActivationPage(@Param('id') id: string, @Res() res: any) {
-    try {
-      const activationHtml = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Staff Account Activation</title>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    margin: 0;
-                    padding: 20px;
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-                .container {
-                    background: white;
-                    border-radius: 20px;
-                    padding: 40px;
-                    text-align: center;
-                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-                    max-width: 500px;
-                    width: 100%;
-                }
-                .icon {
-                    font-size: 64px;
-                    margin-bottom: 20px;
-                }
-                h1 {
-                    color: #2d3748;
-                    margin-bottom: 10px;
-                    font-size: 28px;
-                }
-                .subtitle {
-                    color: #718096;
-                    margin-bottom: 30px;
-                    font-size: 16px;
-                }
-                .activate-button {
-                    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-                    color: white;
-                    border: none;
-                    padding: 15px 30px;
-                    border-radius: 10px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s;
-                    margin: 10px;
-                }
-                .activate-button:hover {
-                    transform: translateY(-2px);
-                }
-                .verify-button {
-                    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                    color: white;
-                    border: none;
-                    padding: 15px 30px;
-                    border-radius: 10px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s;
-                    margin: 10px;
-                }
-                .verify-button:hover {
-                    transform: translateY(-2px);
-                }
-                .result {
-                    margin-top: 20px;
-                    padding: 15px;
-                    border-radius: 10px;
-                    display: none;
-                }
-                .success {
-                    background: #d1fae5;
-                    color: #065f46;
-                    border: 1px solid #10b981;
-                }
-                .error {
-                    background: #fee2e2;
-                    color: #991b1b;
-                    border: 1px solid #ef4444;
-                }
-                .loading {
-                    background: #dbeafe;
-                    color: #1e40af;
-                    border: 1px solid #3b82f6;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="icon">🚀</div>
-                <h1>Staff Account Activation</h1>
-                <p class="subtitle">Choose your activation method for Render deployment</p>
-                
-                <div>
-                    <button class="activate-button" onclick="activateStaff()">
-                        ⚡ Immediate Activation
-                    </button>
-                    <button class="verify-button" onclick="verifyStaff()">
-                        🔐 Traditional Verification
-                    </button>
-                </div>
-                
-                <div id="result" class="result"></div>
-                
-                <div style="margin-top: 30px; font-size: 14px; color: #718096;">
-                    <p><strong>Staff ID:</strong> ${id}</p>
-                    <p><strong>Platform:</strong> Render Deployment</p>
-                </div>
-            </div>
-
-            <script>
-                const staffId = '${id}';
-                const baseUrl = window.location.origin + '/api';
-
-                function showResult(message, type) {
-                    const result = document.getElementById('result');
-                    result.className = 'result ' + type;
-                    result.innerHTML = message;
-                    result.style.display = 'block';
-                }
-
-                async function activateStaff() {
-                    showResult('⏳ Activating staff member...', 'loading');
-                    
-                    try {
-                        const response = await fetch(baseUrl + '/staff/activate/' + staffId, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (response.ok) {
-                            showResult(
-                                '✅ <strong>Activation Successful!</strong><br>' +
-                                'Staff: ' + result.staff.name + '<br>' +
-                                'Role: ' + result.staff.role + '<br>' +
-                                'Status: ' + result.staff.status + '<br>' +
-                                '🎯 <strong>Can now login!</strong>',
-                                'success'
-                            );
-                        } else {
-                            showResult('❌ <strong>Activation Failed:</strong><br>' + result.message, 'error');
-                        }
-                    } catch (error) {
-                        showResult('❌ <strong>Network Error:</strong><br>' + error.message, 'error');
-                    }
-                }
-
-                async function verifyStaff() {
-                    showResult('⏳ Verifying staff member...', 'loading');
-                    
-                    try {
-                        const response = await fetch(baseUrl + '/staff/verify/' + staffId, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (response.ok) {
-                            showResult(
-                                '✅ <strong>Verification Successful!</strong><br>' +
-                                'Staff: ' + result.staff.name + '<br>' +
-                                'Role: ' + result.staff.role + '<br>' +
-                                'Activated: ' + (result.activated ? 'Yes' : 'Already verified') + '<br>' +
-                                '🎯 <strong>Can now login!</strong>',
-                                'success'
-                            );
-                        } else {
-                            showResult('❌ <strong>Verification Failed:</strong><br>' + result.message, 'error');
-                        }
-                    } catch (error) {
-                        showResult('❌ <strong>Network Error:</strong><br>' + error.message, 'error');
-                    }
-                }
-            </script>
-        </body>
-        </html>
-      `;
-      
-      res.setHeader('Content-Type', 'text/html');
-      res.send(activationHtml);
-    } catch (error) {
-      console.error('Error showing activation page:', error);
-      res.status(500).send('Error loading activation page');
     }
   }
 

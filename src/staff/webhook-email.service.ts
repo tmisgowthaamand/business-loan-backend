@@ -62,10 +62,32 @@ export class WebhookEmailService {
         name: recipientName,
         role: role,
         accessLink: accessLink,
-        subject: `🎉 Welcome to Business Loan Management System - Verify Your ${role} Account`,
+        subject: `Account Verification Required - Business Loan Management System`,
         template: 'staff-verification-email',
         emailBody: this.generateVerificationEmailHTML(recipientName, role, accessLink, recipientEmail, loginPassword),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // Anti-spam headers for webhook services
+        headers: {
+          'X-Mailer': 'Business Loan Management System v1.0',
+          'X-Priority': '3',
+          'X-MSMail-Priority': 'Normal',
+          'Importance': 'Normal',
+          'List-Unsubscribe': '<mailto:unsubscribe@businessloan.com>',
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
+          'X-Spam-Status': 'No',
+          'X-Spam-Score': '0.0',
+          'Precedence': 'bulk',
+          'X-Campaign-Type': 'transactional',
+          'X-Message-Type': 'account-verification'
+        },
+        // Email metadata for better deliverability
+        metadata: {
+          category: 'staff-verification',
+          type: 'transactional',
+          priority: 'high',
+          sender: 'Business Loan Management System'
+        }
       };
 
       this.logger.log(`📧 Sending email via webhook to ${recipientEmail}`);
@@ -199,31 +221,31 @@ export class WebhookEmailService {
       <body>
           <div class="container">
               <div class="header">
-                  <h1>🎉 Welcome to Business Loan Management System</h1>
+                  <h1>Business Loan Management System</h1>
                   <p>Account Verification Required</p>
               </div>
               
               <div class="content">
                   <div class="welcome-box">
-                      <h2>Hello ${recipientName}! 👋</h2>
+                      <h2>Hello ${recipientName}</h2>
                       <p>Your account has been created successfully. Please verify your email address to activate your account and start using the system.</p>
                       <div class="role-badge">${role}</div>
                   </div>
                   
                   ${loginPassword ? `
                   <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 20px 0; border-radius: 0 8px 8px 0;">
-                      <h3>🔑 Your Login Credentials:</h3>
+                      <h3>Your Login Credentials:</h3>
                       <div style="background: #fff; padding: 15px; border-radius: 8px; margin: 10px 0; border: 2px solid #e5e7eb;">
                           <p style="margin: 5px 0;"><strong>Email:</strong> ${recipientEmail}</p>
                           <p style="margin: 5px 0;"><strong>Password:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${loginPassword}</code></p>
                           <p style="margin: 5px 0;"><strong>Role:</strong> ${role}</p>
                       </div>
-                      <p style="color: #dc2626; font-weight: 600; margin: 10px 0;">⚠️ Please keep these credentials secure and change your password after first login.</p>
+                      <p style="color: #dc2626; font-weight: 600; margin: 10px 0;">Please keep these credentials secure and change your password after first login.</p>
                   </div>
                   ` : ''}
                   
                   <div class="instructions">
-                      <h3>📋 Next Steps:</h3>
+                      <h3>Next Steps:</h3>
                       <ol>
                           <li><strong>Click the verification button below</strong></li>
                           <li><strong>Your account will be activated immediately</strong></li>
@@ -234,12 +256,12 @@ export class WebhookEmailService {
                   
                   <div style="text-align: center; margin: 30px 0;">
                       <a href="${accessLink}" class="verify-button">
-                          ✅ Verify My Account Now
+                          Verify My Account Now
                       </a>
                   </div>
                   
                   <div class="instructions">
-                      <h4>🔒 Security Information:</h4>
+                      <h4>Security Information:</h4>
                       <ul>
                           <li>This verification link expires in <strong>24 hours</strong></li>
                           <li>Click the link only once to activate your account</li>

@@ -51,24 +51,10 @@ export class IdGeneratorService {
   }
 
   /**
-   * Generate next ID for staff module (starting from 8 to avoid conflicts with existing staff 1-7)
+   * Generate next ID for staff module (1-2 digits)
    */
   async generateStaffId(): Promise<number> {
-    const counterKey = this.COUNTER_KEYS['staff'];
-    let currentCounter = await this.persistenceService.loadData(counterKey, 7); // Start from 7
-    
-    // Ensure we start from at least 8 to avoid conflicts with existing staff (IDs 1-7)
-    if (currentCounter < 8) {
-      currentCounter = 8;
-    } else {
-      currentCounter++;
-    }
-    
-    // Save updated counter
-    await this.persistenceService.saveData(counterKey, currentCounter);
-    
-    this.logger.log(`🔢 Generated staff ID: ${currentCounter}`);
-    return currentCounter;
+    return this.generateNextId('staff');
   }
 
   /**

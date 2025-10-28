@@ -15,7 +15,6 @@ import { ShortlistModule } from './shortlist/shortlist.module';
 import { CashfreeModule } from './cashfree/cashfree.module';
 import { WebhookModule } from './webhook/webhook.module';
 import { StaffModule } from './staff/staff.module';
-import { SimpleStaffModule } from './staff/simple-staff.module';
 import { GeminiModule } from './gemini/gemini.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TransactionModule } from './transaction/transaction.module';
@@ -38,7 +37,6 @@ import { AutoSyncModule } from './database/auto-sync.module';
     CashfreeModule,
     WebhookModule,
     StaffModule,
-    SimpleStaffModule,
     GeminiModule,
     NotificationsModule,
     TransactionModule,

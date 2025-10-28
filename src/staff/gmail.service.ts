@@ -133,7 +133,7 @@ export class GmailService {
     this.logger.log(`🌐 Environment: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
     this.logger.log(`🔐 App Password: ${gmailPassword.length > 10 ? gmailPassword.substring(0, 4) + '****' + gmailPassword.substring(gmailPassword.length - 4) : 'NOT_CONFIGURED'}`);
 
-    // Enhanced Render-specific configuration with fallback options
+    // Enhanced Render-specific configuration with anti-spam optimizations
     const renderConfig = isRender ? {
       service: 'gmail',
       host: 'smtp.gmail.com',
@@ -161,6 +161,9 @@ export class GmailService {
       // Additional Render optimizations
       ignoreTLS: false,
       requireTLS: true,
+      // Anti-spam headers
+      name: 'business-loan-system.com', // HELO/EHLO name
+      localAddress: undefined, // Let system choose
     } : {};
 
     // Production-optimized transporter configuration
@@ -348,20 +351,45 @@ export class GmailService {
           email: fromEmail,
           name: 'Business Loan Management System'
         },
-        subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
+        subject: `Account Activation Required - Business Loan Management System`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
-        // Add additional headers for better deliverability
+        text: this.generatePlainTextTemplate(recipientName, accessLink, role),
+        // Enhanced anti-spam headers for better deliverability
         headers: {
-          'X-Mailer': 'Business Loan System',
+          'X-Mailer': 'Business Loan Management System v1.0',
           'X-Priority': '3',
+          'X-MSMail-Priority': 'Normal',
+          'Importance': 'Normal',
+          'List-Unsubscribe': '<mailto:unsubscribe@businessloan.com>',
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'X-Entity-Ref-ID': `staff-activation-${Date.now()}`,
+          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
+          'X-Spam-Status': 'No',
+          'X-Spam-Score': '0.0',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+          'Reply-To': fromEmail,
+          'Return-Path': fromEmail,
+          'Sender': fromEmail,
+          'X-Original-Sender': fromEmail,
+          'Precedence': 'bulk',
+          'X-Bulk-Mail': 'true',
+          'X-Campaign-Type': 'transactional',
+          'X-Message-Type': 'account-verification'
         },
-        // Add tracking settings for Render
-        ...(isRender && {
-          trackingSettings: {
-            clickTracking: { enable: false },
-            openTracking: { enable: false }
-          }
-        })
+        // Improved tracking settings
+        trackingSettings: {
+          clickTracking: { enable: false },
+          openTracking: { enable: false },
+          subscriptionTracking: { enable: false }
+        },
+        // Add mail settings for better deliverability
+        mailSettings: {
+          sandboxMode: { enable: false },
+          spamCheck: { enable: true, threshold: 1 }
+        },
+        // Add categories for organization
+        categories: ['staff-activation', 'business-loan-system']
       };
 
       this.logger.log(`📧 [SENDGRID] Sending to ${recipientEmail} (from: ${fromEmail})`);
@@ -544,12 +572,41 @@ export class GmailService {
           address: currentEmail
         },
         to: recipientEmail,
-        subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
+        subject: `Account Activation Required - Business Loan Management System`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
+        text: this.generatePlainTextTemplate(recipientName, accessLink, role),
         priority: 'normal' as const,
         headers: {
-          'X-Mailer': 'Business Loan System',
+          'X-Mailer': 'Business Loan Management System v1.0',
           'X-Priority': '3',
+          'X-MSMail-Priority': 'Normal',
+          'Importance': 'Normal',
+          'List-Unsubscribe': '<mailto:unsubscribe@businessloan.com>',
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'Message-ID': `<${Date.now()}.${recipientEmail.replace('@', '.')}@businessloan.com>`,
+          'Date': new Date().toUTCString(),
+          'MIME-Version': '1.0',
+          'Content-Type': 'multipart/alternative',
+          'X-Entity-Ref-ID': `staff-activation-${Date.now()}`,
+          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
+          'X-Spam-Status': 'No',
+          'X-Spam-Score': '0.0',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+          'Reply-To': currentEmail,
+          'Return-Path': currentEmail,
+          'Sender': currentEmail,
+          'X-Original-Sender': currentEmail,
+          'Precedence': 'bulk',
+          'X-Bulk-Mail': 'true',
+          'X-Campaign-Type': 'transactional',
+          'X-Message-Type': 'account-verification',
+          'Authentication-Results': 'spf=pass smtp.mailfrom=' + currentEmail,
+          'X-Authenticated-Sender': currentEmail
+        },
+        envelope: {
+          from: currentEmail,
+          to: recipientEmail
         }
       };
       
@@ -771,88 +828,239 @@ export class GmailService {
   }
 
   private generateAccessEmailTemplate(name: string, accessLink: string, role: StaffRole): string {
+    // Generate a more professional, spam-filter friendly email template
+    const currentDate = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    
     return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Welcome to Business Loan Management System</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-            .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 0; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
-            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { padding: 40px 30px; }
-            .role-badge { display: inline-block; background-color: ${role === 'ADMIN' ? '#e53e3e' : '#38a169'}; color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; margin: 10px 0; }
-            .access-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 20px 0; transition: transform 0.2s; }
-            .access-button:hover { transform: translateY(-2px); }
-            .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 10px 10px; font-size: 12px; color: #666; }
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <title>Account Activation - Business Loan Management System</title>
+        <style type="text/css">
+            /* Anti-spam optimized styles */
+            body { 
+                font-family: Arial, Helvetica, sans-serif; 
+                line-height: 1.6; 
+                color: #333333; 
+                margin: 0; 
+                padding: 0; 
+                background-color: #f8f9fa;
+                -webkit-text-size-adjust: 100%;
+                -ms-text-size-adjust: 100%;
+            }
+            .email-container { 
+                max-width: 600px; 
+                margin: 20px auto; 
+                background-color: #ffffff; 
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+            }
+            .header { 
+                background-color: #0056b3; 
+                color: #ffffff; 
+                padding: 30px 20px; 
+                text-align: center; 
+                border-radius: 8px 8px 0 0;
+            }
+            .header h1 {
+                margin: 0;
+                font-size: 24px;
+                font-weight: normal;
+            }
+            .content { 
+                padding: 30px 20px;
+            }
+            .role-info { 
+                background-color: #f8f9fa;
+                border-left: 4px solid #0056b3;
+                padding: 15px;
+                margin: 20px 0;
+            }
+            .activation-section {
+                text-align: center;
+                margin: 30px 0;
+                padding: 20px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+            }
+            .activation-button { 
+                display: inline-block; 
+                background-color: #0056b3; 
+                color: #ffffff; 
+                padding: 12px 30px; 
+                text-decoration: none; 
+                border-radius: 5px; 
+                font-weight: bold;
+                margin: 15px 0;
+            }
+            .activation-button:hover {
+                background-color: #004494;
+            }
+            .security-notice { 
+                background-color: #fff3cd; 
+                border: 1px solid #ffeaa7; 
+                padding: 15px; 
+                border-radius: 5px; 
+                margin: 20px 0;
+            }
+            .footer { 
+                background-color: #f8f9fa; 
+                padding: 20px; 
+                text-align: center; 
+                border-top: 1px solid #e9ecef;
+                font-size: 12px; 
+                color: #6c757d;
+                border-radius: 0 0 8px 8px;
+            }
+            .text-link {
+                color: #0056b3;
+                word-break: break-all;
+            }
+            @media only screen and (max-width: 600px) {
+                .email-container {
+                    margin: 10px;
+                    width: auto !important;
+                }
+                .content {
+                    padding: 20px 15px;
+                }
+            }
         </style>
     </head>
     <body>
-        <div class="container">
+        <div class="email-container">
             <div class="header">
-                <h1>🎉 Welcome to Business Loan Management System</h1>
-                <p>Your account has been created successfully!</p>
+                <h1>Business Loan Management System</h1>
+                <p style="margin: 10px 0 0 0;">Account Activation Required</p>
             </div>
             
             <div class="content">
-                <h2>Hello ${name}! 👋</h2>
+                <p>Dear ${name},</p>
                 
-                <p>Congratulations! You have been granted access to the Business Loan Management System with the following role:</p>
+                <p>Welcome to the Business Loan Management System. Your account has been successfully created and requires activation.</p>
                 
-                <div class="role-badge">${role}</div>
-                
-                <p><strong>🔐 One-Time Verification Required</strong></p>
-                <p>Click the button below to activate your account and complete the setup. This link can only be used once and will expire in 24 hours.</p>
-                
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="${accessLink}" class="access-button">🚀 Activate My Account</a>
+                <div class="role-info">
+                    <strong>Account Details:</strong><br>
+                    Name: ${name}<br>
+                    Role: ${role}<br>
+                    Date Created: ${currentDate}
                 </div>
                 
-                <div class="warning">
-                    <strong>⚠️ Important Security Notes:</strong>
-                    <ul>
-                        <li>This link is for one-time use only</li>
-                        <li>Do not share this link with anyone</li>
-                        <li>The link will expire in 24 hours</li>
-                        <li>After activation, you can login with your credentials</li>
+                <div class="activation-section">
+                    <p><strong>Action Required: Activate Your Account</strong></p>
+                    <p>Please click the button below to activate your account. This link is valid for 24 hours and can only be used once.</p>
+                    
+                    <a href="${accessLink}" class="activation-button">Activate Account</a>
+                    
+                    <p style="margin-top: 20px; font-size: 12px;">If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p class="text-link" style="font-size: 12px;">${accessLink}</p>
+                </div>
+                
+                <div class="security-notice">
+                    <strong>Security Information:</strong>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>This activation link expires in 24 hours</li>
+                        <li>The link can only be used once</li>
+                        <li>Do not share this link with others</li>
+                        <li>Contact support if you need assistance</li>
                     </ul>
                 </div>
                 
-                <p><strong>🎯 What you can do as ${role}:</strong></p>
-                <ul>
+                <p><strong>Your ${role} privileges include:</strong></p>
+                <ul style="padding-left: 20px;">
                     ${role === 'ADMIN' 
                         ? `
-                        <li>📊 View and manage all loan applications</li>
-                        <li>👥 Manage staff members and permissions</li>
-                        <li>📈 Access detailed analytics and reports</li>
-                        <li>⚙️ Configure system settings</li>
-                        <li>🔧 Manage enquiries and documents</li>
+                        <li>Manage loan applications and documents</li>
+                        <li>Oversee staff members and permissions</li>
+                        <li>Access system analytics and reports</li>
+                        <li>Configure system settings</li>
                         `
                         : `
-                        <li>📋 View and process loan applications</li>
-                        <li>📄 Manage documents and enquiries</li>
-                        <li>💼 Update application statuses</li>
-                        <li>📞 Communicate with clients</li>
+                        <li>Process loan applications</li>
+                        <li>Manage client documents</li>
+                        <li>Update application statuses</li>
+                        <li>Communicate with clients</li>
                         `
                     }
                 </ul>
                 
-                <p>If you have any questions or need assistance, please contact your system administrator.</p>
+                <p>If you did not request this account or have questions, please contact your system administrator immediately.</p>
                 
                 <p>Best regards,<br>
-                <strong>Business Loan Management Team</strong></p>
+                Business Loan Management Team</p>
             </div>
             
             <div class="footer">
-                <p>© 2025 Business Loan Management System. All rights reserved.</p>
-                <p>This is an automated message. Please do not reply to this email.</p>
+                <p>Business Loan Management System<br>
+                This is an automated message - please do not reply</p>
+                <p>&copy; 2025 Business Loan Management System. All rights reserved.</p>
             </div>
         </div>
     </body>
     </html>
+    `;
+  }
+
+  private generatePlainTextTemplate(name: string, accessLink: string, role: StaffRole): string {
+    const currentDate = new Date().toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    
+    return `
+Business Loan Management System
+Account Activation Required
+
+Dear ${name},
+
+Welcome to the Business Loan Management System. Your account has been successfully created and requires activation.
+
+Account Details:
+- Name: ${name}
+- Role: ${role}
+- Date Created: ${currentDate}
+
+ACTION REQUIRED: Activate Your Account
+
+Please copy and paste the following link into your browser to activate your account. This link is valid for 24 hours and can only be used once.
+
+Activation Link: ${accessLink}
+
+Security Information:
+- This activation link expires in 24 hours
+- The link can only be used once
+- Do not share this link with others
+- Contact support if you need assistance
+
+Your ${role} privileges include:
+${role === 'ADMIN' 
+  ? `- Manage loan applications and documents
+- Oversee staff members and permissions
+- Access system analytics and reports
+- Configure system settings`
+  : `- Process loan applications
+- Manage client documents
+- Update application statuses
+- Communicate with clients`
+}
+
+If you did not request this account or have questions, please contact your system administrator immediately.
+
+Best regards,
+Business Loan Management Team
+
+---
+Business Loan Management System
+This is an automated message - please do not reply
+© 2025 Business Loan Management System. All rights reserved.
     `;
   }
 

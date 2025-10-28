@@ -12,7 +12,13 @@ import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeApplicationDto } from './dto';
 import { JwtGuard } from '../auth/guard';
 import { GetUser } from '../auth/decorator';
-import { User } from '@prisma/client';
+// import { User } from '@prisma/client'; // Commented out due to Prisma not being used in demo mode
+
+interface User {
+  id: number;
+  role: string;
+  email?: string;
+}
 
 // @UseGuards(JwtGuard) // Temporarily disabled for demo
 @Controller('cashfree')
@@ -55,14 +61,32 @@ export class CashfreeController {
 
   @Get()
   findAll(@GetUser() user?: User) {
-    const mockUser = user || { id: 1, role: 'ADMIN' } as User;
+    const mockUser = user || { 
+      id: 1, 
+      name: 'Demo User',
+      email: 'demo@businessloan.com',
+      role: 'ADMIN',
+      createdAt: new Date(),
+      inviteToken: '',
+      passwordHash: '',
+      tokenExpiry: new Date()
+    } as any;
     return this.cashfreeService.findAll(mockUser);
   }
 
   @Get('applications')
   getApplications(@GetUser() user?: User) {
-    console.log('🔍 GET /api/cashfree/applications called');
-    const mockUser = user || { id: 1, role: 'ADMIN' } as User;
+    console.log('📋 GET /api/cashfree/applications endpoint called');
+    const mockUser = user || { 
+      id: 1, 
+      name: 'Demo User',
+      email: 'demo@businessloan.com',
+      role: 'ADMIN',
+      createdAt: new Date(),
+      inviteToken: '',
+      passwordHash: '',
+      tokenExpiry: new Date()
+    } as any;
     return this.cashfreeService.findAll(mockUser);
   }
 
@@ -124,7 +148,17 @@ export class CashfreeController {
       const result = await this.cashfreeService.clearSupabaseAndSyncLocal();
       
       // Get current localhost payments to show what was synced
-      const currentPayments = await this.cashfreeService.findAll({ id: 1, role: 'ADMIN' } as any);
+      const mockUser = { 
+        id: 1, 
+        name: 'Demo User',
+        email: 'demo@businessloan.com',
+        role: 'ADMIN',
+        createdAt: new Date(),
+        inviteToken: '',
+        passwordHash: '',
+        tokenExpiry: new Date()
+      } as any;
+      const currentPayments = await this.cashfreeService.findAll(mockUser);
       
       console.log('🎉 Successfully cleared Supabase and synced localhost payment applications!');
       
@@ -163,7 +197,17 @@ export class CashfreeController {
   @Get('localhost/count')
   async getLocalhostPaymentCount() {
     try {
-      const payments = await this.cashfreeService.findAll({ id: 1, role: 'ADMIN' } as any);
+      const mockUser = { 
+        id: 1, 
+        name: 'Demo User',
+        email: 'demo@businessloan.com',
+        role: 'ADMIN',
+        createdAt: new Date(),
+        inviteToken: '',
+        passwordHash: '',
+        tokenExpiry: new Date()
+      } as any;
+      const payments = await this.cashfreeService.findAll(mockUser);
       return {
         message: 'Current localhost payment application count',
         count: payments?.length || 0,
@@ -197,8 +241,17 @@ export class CashfreeController {
       console.log('🚀 Starting manual sync of payment applications to Supabase...');
       
       // Get all local payment applications
-      const mockUser = { id: 1, role: 'ADMIN' };
-      const payments = await this.cashfreeService.findAll(mockUser as any);
+      const mockUser = { 
+        id: 1, 
+        name: 'Demo User',
+        email: 'demo@businessloan.com',
+        role: 'ADMIN',
+        createdAt: new Date(),
+        inviteToken: '',
+        passwordHash: '',
+        tokenExpiry: new Date()
+      } as any;
+      const payments = await this.cashfreeService.findAll(mockUser);
       console.log('💳 Found', payments.length, 'local payment applications to sync');
       
       // Import Supabase client directly
