@@ -323,77 +323,82 @@ export class GmailService {
     }
 
     try {
-      // Use a verified sender email - this should be set in environment variables
-      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
-                       this.config.get('SENDGRID_VERIFIED_EMAIL') || 
-                       process.env.SENDGRID_FROM_EMAIL || 
-                       process.env.SENDGRID_VERIFIED_EMAIL ||
-                       'noreply@yourdomain.com'; // This should be replaced with actual verified email
-      const isRender = process.env.RENDER === 'true';
+      // Use a verified sender email - prioritize verified Gmail addresses
+      let fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
+                     this.config.get('SENDGRID_VERIFIED_EMAIL') || 
+                     process.env.SENDGRID_FROM_EMAIL || 
+                     process.env.SENDGRID_VERIFIED_EMAIL;
       
-      // Validate that we have a proper from email
-      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'noreply@businessloan.com') {
-        this.logger.error('❌ SENDGRID: No verified sender email configured!');
-        this.logger.error('⚠️ SENDGRID: Current from email needs verification:', fromEmail);
-        this.logger.error('🔧 SENDGRID SETUP STEPS:');
-        this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
-        this.logger.error('   2. Click "Create New Sender" or "Verify Single Sender"');
-        this.logger.error('   3. Add your email address (can be Gmail, but must be verified)');
-        this.logger.error('   4. Check your email and click verification link');
-        this.logger.error('   5. Update SENDGRID_FROM_EMAIL in Render dashboard');
-        this.logger.error('   6. Redeploy your Render service');
-        this.logger.error('🔗 SENDGRID: Verify sender at https://app.sendgrid.com/settings/sender_auth');
+      // If no verified email is configured, use the Gmail account as fallback
+      if (!fromEmail || fromEmail === 'noreply@yourdomain.com' || fromEmail === 'noreply@businessloan.com') {
+        // Use the same Gmail account that's configured for SMTP
+        const gmailAccount = this.config.get('GMAIL_EMAIL') || 
+                           this.config.get('GMAIL_USER') || 
+                           process.env.GMAIL_EMAIL || 
+                           'gokrishna98@gmail.com';
+        fromEmail = gmailAccount;
         
-        // For now, allow the process to continue but log the issue
-        this.logger.warn('⚠️ CONTINUING WITH UNVERIFIED EMAIL - EMAILS MAY FAIL');
+        this.logger.warn('⚠️ SENDGRID: No verified sender email configured, using Gmail account:', fromEmail);
+        this.logger.warn('🔧 SENDGRID SETUP REQUIRED:');
+        this.logger.warn('   1. Go to https://app.sendgrid.com/settings/sender_auth');
+        this.logger.warn('   2. Click "Verify a Single Sender"');
+        this.logger.warn(`   3. Add and verify: ${fromEmail}`);
+        this.logger.warn('   4. Set SENDGRID_FROM_EMAIL environment variable');
       }
       
+      const isRender = process.env.RENDER === 'true';
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(fromEmail)) {
+        this.logger.error('❌ SENDGRID: Invalid from email format:', fromEmail);
+        return false;
+      }
+      
+      // Validate recipient email format
+      if (!emailRegex.test(recipientEmail)) {
+        this.logger.error('❌ SENDGRID: Invalid recipient email format:', recipientEmail);
+        return false;
+      }
+      
+      // Create a clean, simple message structure to avoid SendGrid validation errors
       const msg = {
-        to: recipientEmail,
+        to: recipientEmail.trim(),
         from: {
-          email: fromEmail,
+          email: fromEmail.trim(),
           name: 'Business Loan Management System'
         },
-        subject: `Account Activation Required - Business Loan Management System`,
+        subject: 'Account Activation Required - Business Loan Management System',
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
         text: this.generatePlainTextTemplate(recipientName, accessLink, role),
-        // Enhanced anti-spam headers for better deliverability
+        // Minimal headers to avoid validation issues
         headers: {
-          'X-Mailer': 'Business Loan Management System v1.0',
-          'X-Priority': '3',
-          'X-MSMail-Priority': 'Normal',
-          'Importance': 'Normal',
-          'List-Unsubscribe': '<mailto:unsubscribe@businessloan.com>',
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-          'X-Entity-Ref-ID': `staff-activation-${Date.now()}`,
-          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
-          'X-Spam-Status': 'No',
-          'X-Spam-Score': '0.0',
-          'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
-          'Reply-To': fromEmail,
-          'Return-Path': fromEmail,
-          'Sender': fromEmail,
-          'X-Original-Sender': fromEmail,
-          'Precedence': 'bulk',
-          'X-Bulk-Mail': 'true',
-          'X-Campaign-Type': 'transactional',
-          'X-Message-Type': 'account-verification'
+          'X-Mailer': 'Business Loan Management System',
+          'Reply-To': fromEmail.trim()
         },
-        // Improved tracking settings
+        // Disable tracking to avoid issues
         trackingSettings: {
           clickTracking: { enable: false },
           openTracking: { enable: false },
           subscriptionTracking: { enable: false }
         },
-        // Add mail settings for better deliverability
+        // Simple mail settings
         mailSettings: {
-          sandboxMode: { enable: false },
-          spamCheck: { enable: true, threshold: 1 }
+          sandboxMode: { enable: false }
         },
         // Add categories for organization
-        categories: ['staff-activation', 'business-loan-system']
+        categories: ['staff-activation']
       };
+
+      // Validate message structure
+      if (!msg.to || !msg.from.email || !msg.subject || !msg.html) {
+        this.logger.error('❌ SENDGRID: Invalid message structure');
+        this.logger.error('   - To:', msg.to);
+        this.logger.error('   - From:', msg.from.email);
+        this.logger.error('   - Subject:', msg.subject);
+        this.logger.error('   - HTML length:', msg.html?.length || 0);
+        return false;
+      }
 
       this.logger.log(`📧 [SENDGRID] Sending to ${recipientEmail} (from: ${fromEmail})`);
       this.logger.log(`📧 [SENDGRID] API Key: ${this.config.get('SENDGRID_API_KEY') ? 'Present ✅' : 'Missing ❌'}`);
@@ -409,51 +414,85 @@ export class GmailService {
       this.logger.log(`📧 [SENDGRID] Message ID: ${result[0]?.headers?.['x-message-id'] || 'Not provided'}`);
       return true;
     } catch (error) {
-      this.logger.error(`❌ [SENDGRID] FAILED for ${recipientEmail}:`, error.message);
+      this.logger.error(`❌ [SENDGRID] FAILED for ${recipientEmail}:`);
+      this.logger.error(`   - Error message: ${error.message}`);
       
-      // Enhanced error logging for Render debugging
+      // Enhanced error logging for debugging
       this.logger.error(`🔍 [SENDGRID] Error details for ${recipientEmail}:`);
       this.logger.error(`   - Error type: ${error.constructor.name}`);
       this.logger.error(`   - Error code: ${error.code || 'Not provided'}`);
       this.logger.error(`   - HTTP status: ${error.response?.status || 'Not provided'}`);
       
       if (error.response?.body?.errors) {
-        this.logger.error('📧 [SENDGRID] API errors:', JSON.stringify(error.response.body.errors, null, 2));
+        this.logger.error('📧 [SENDGRID] API errors:');
+        const errors = error.response.body.errors;
+        
+        errors.forEach((err, index) => {
+          this.logger.error(`   Error ${index + 1}:`);
+          this.logger.error(`     - Message: ${err.message || 'No message'}`);
+          this.logger.error(`     - Field: ${err.field || 'No field'}`);
+          this.logger.error(`     - Help: ${err.help || 'No help available'}`);
+        });
         
         // Check for specific error types
-        const errors = error.response.body.errors;
         const senderIdentityError = errors.find(err => 
           err.message?.includes('verified Sender Identity') || 
-          err.field === 'from'
+          err.message?.includes('sender identity') ||
+          err.field === 'from' ||
+          err.message?.includes('The from address does not match a verified Sender Identity')
         );
         
         if (senderIdentityError) {
-          this.logger.error('🚨 [SENDGRID] SENDER IDENTITY ERROR for Poorani!');
-          this.logger.error('📧 [RENDER] IMMEDIATE ACTION REQUIRED:');
+          this.logger.error('🚨 [SENDGRID] SENDER IDENTITY ERROR!');
+          this.logger.error('📧 IMMEDIATE ACTION REQUIRED:');
           this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
-          this.logger.error('   2. Verify sender email: gokrishna98@gmail.com');
-          this.logger.error('   3. Update Render environment: SENDGRID_FROM_EMAIL=gokrishna98@gmail.com');
-          this.logger.error('   4. Redeploy Render service');
+          this.logger.error('   2. Click "Verify a Single Sender"');
+          this.logger.error(`   3. Add and verify this email: ${this.config.get('GMAIL_EMAIL') || 'gokrishna98@gmail.com'}`);
+          this.logger.error('   4. Set SENDGRID_FROM_EMAIL environment variable to the verified email');
+          this.logger.error('   5. Restart the application');
           this.logger.error(`   Current from email: ${this.config.get('SENDGRID_FROM_EMAIL') || 'NOT SET'}`);
         }
         
         // Check for API key issues
         const apiKeyError = errors.find(err => 
           err.message?.includes('API key') || 
-          err.message?.includes('Unauthorized')
+          err.message?.includes('Unauthorized') ||
+          err.message?.includes('authentication')
         );
         
         if (apiKeyError) {
-          this.logger.warn('🔑 [SENDGRID] API KEY ISSUE - will use demo mode');
-          this.logger.log('📧 [RENDER] Check SendGrid API key in environment variables');
+          this.logger.error('🔑 [SENDGRID] API KEY ISSUE!');
+          this.logger.error('   1. Check if SENDGRID_API_KEY is set correctly');
+          this.logger.error('   2. Verify API key starts with "SG."');
+          this.logger.error('   3. Ensure API key has "Mail Send" permissions');
+          this.logger.error(`   Current API key status: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
         }
+
+        // Check for content/format issues
+        const contentError = errors.find(err => 
+          err.message?.includes('content') || 
+          err.message?.includes('invalid') ||
+          err.field === 'subject' ||
+          err.field === 'html'
+        );
+        
+        if (contentError) {
+          this.logger.error('📝 [SENDGRID] CONTENT/FORMAT ERROR!');
+          this.logger.error('   - Check email content format');
+          this.logger.error('   - Verify subject line is not empty');
+          this.logger.error('   - Ensure HTML content is valid');
+        }
+      } else if (error.response?.body) {
+        this.logger.error('📧 [SENDGRID] Response body:', JSON.stringify(error.response.body, null, 2));
       }
       
       // Log current environment for debugging
-      this.logger.log(`🔧 [RENDER] Current email config:`);
-      this.logger.log(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
-      this.logger.log(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING'}`);
-      this.logger.log(`   - RENDER env: ${process.env.RENDER}`);
+      this.logger.error(`🔧 [SENDGRID] Current configuration:`);
+      this.logger.error(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present ✅' : 'MISSING ❌'}`);
+      this.logger.error(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING ❌'}`);
+      this.logger.error(`   - GMAIL_EMAIL: ${this.config.get('GMAIL_EMAIL') || 'MISSING ❌'}`);
+      this.logger.error(`   - Environment: ${process.env.NODE_ENV || 'development'}`);
+      this.logger.error(`   - Platform: ${process.env.RENDER ? 'Render' : process.env.VERCEL ? 'Vercel' : 'Local'}`);
       
       return false;
     }

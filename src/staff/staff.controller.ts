@@ -2195,4 +2195,124 @@ export class StaffController {
     }
   }
 
+  // Test SendGrid configuration and email sending
+  @Post('test/sendgrid')
+  async testSendGrid(@Body() body: { email?: string }) {
+    const testEmail = body.email || 'gowthaamaneswar98@gmail.com';
+    
+    console.log('🧪 [SENDGRID] Testing SendGrid configuration...');
+    console.log(`📧 Target email: ${testEmail}`);
+    
+    try {
+      // Check environment variables
+      const sendGridApiKey = process.env.SENDGRID_API_KEY || this.configService.get('SENDGRID_API_KEY');
+      const sendGridFromEmail = process.env.SENDGRID_FROM_EMAIL || this.configService.get('SENDGRID_FROM_EMAIL');
+      const gmailEmail = process.env.GMAIL_EMAIL || this.configService.get('GMAIL_EMAIL');
+      
+      console.log('🔧 [SENDGRID] Configuration check:');
+      console.log(`   - API Key: ${sendGridApiKey ? 'Present ✅' : 'Missing ❌'}`);
+      console.log(`   - From Email: ${sendGridFromEmail || 'Missing ❌'}`);
+      console.log(`   - Gmail Fallback: ${gmailEmail || 'Missing ❌'}`);
+      
+      if (!sendGridApiKey) {
+        return {
+          success: false,
+          error: 'SENDGRID_API_KEY not configured',
+          instructions: [
+            '1. Sign up at https://app.sendgrid.com',
+            '2. Create API key: Settings > API Keys',
+            '3. Set SENDGRID_API_KEY environment variable',
+            '4. Restart the application'
+          ]
+        };
+      }
+      
+      if (!sendGridApiKey.startsWith('SG.')) {
+        return {
+          success: false,
+          error: 'Invalid SendGrid API key format',
+          message: 'API key should start with "SG."'
+        };
+      }
+      
+      // Test SendGrid with a simple message
+      const sgMail = require('@sendgrid/mail');
+      sgMail.setApiKey(sendGridApiKey);
+      
+      const fromEmail = sendGridFromEmail || gmailEmail || 'gokrishna98@gmail.com';
+      
+      const msg = {
+        to: testEmail,
+        from: {
+          email: fromEmail,
+          name: 'Business Loan System Test'
+        },
+        subject: 'SendGrid Test Email',
+        html: `
+          <h2>SendGrid Test Email</h2>
+          <p>This is a test email to verify SendGrid configuration.</p>
+          <p>Sent at: ${new Date().toISOString()}</p>
+          <p>From: ${fromEmail}</p>
+          <p>To: ${testEmail}</p>
+        `,
+        text: `SendGrid Test Email - Sent at: ${new Date().toISOString()}`
+      };
+      
+      console.log(`📧 [SENDGRID] Attempting to send test email...`);
+      console.log(`   - From: ${fromEmail}`);
+      console.log(`   - To: ${testEmail}`);
+      
+      const result = await sgMail.send(msg);
+      
+      console.log('✅ [SENDGRID] Test email sent successfully!');
+      
+      return {
+        success: true,
+        message: 'SendGrid test email sent successfully',
+        details: {
+          from: fromEmail,
+          to: testEmail,
+          messageId: result[0]?.headers?.['x-message-id'],
+          statusCode: result[0]?.statusCode
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+    } catch (error) {
+      console.error('❌ [SENDGRID] Test failed:', error.message);
+      
+      let errorDetails: any = {
+        message: error.message,
+        type: error.constructor.name
+      };
+      
+      if (error.response?.body?.errors) {
+        errorDetails.sendgridErrors = error.response.body.errors;
+        
+        // Check for specific error types
+        const senderError = error.response.body.errors.find((err: any) => 
+          err.message?.includes('verified Sender Identity') || 
+          err.field === 'from'
+        );
+        
+        if (senderError) {
+          errorDetails.solution = [
+            '1. Go to https://app.sendgrid.com/settings/sender_auth',
+            '2. Click "Verify a Single Sender"',
+            `3. Add and verify: ${process.env.GMAIL_EMAIL || 'gokrishna98@gmail.com'}`,
+            '4. Set SENDGRID_FROM_EMAIL environment variable',
+            '5. Restart the application'
+          ];
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'SendGrid test failed',
+        details: errorDetails,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
 }
