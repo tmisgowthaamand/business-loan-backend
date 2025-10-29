@@ -66,13 +66,13 @@ export class GmailService {
           this.logger.error('❌ RENDER: SendGrid object type:', typeof sgMail);
           this.logger.error('❌ RENDER: setApiKey method type:', typeof sgMail?.setApiKey);
           this.sendGridInitialized = false;
-          this.logger.error('⚠️ RENDER: NO EMAIL DELIVERY POSSIBLE - SendGrid setup failed!');
-          this.logger.error('🔧 RENDER: Try installing @sendgrid/mail: npm install @sendgrid/mail');
+          this.logger.warn('⚠️ RENDER: SendGrid setup failed - will use demo mode');
+          this.logger.log('🔧 RENDER: Try installing @sendgrid/mail: npm install @sendgrid/mail');
         }
       } else {
-        this.logger.error('❌ RENDER: SENDGRID_API_KEY missing or invalid!');
-        this.logger.error('⚠️ RENDER: Add SENDGRID_API_KEY environment variable');
-        this.logger.error('🔗 RENDER: Get API key from https://app.sendgrid.com/settings/api_keys');
+        this.logger.warn('⚠️ RENDER: SENDGRID_API_KEY missing or invalid!');
+        this.logger.log('🔧 RENDER: Add SENDGRID_API_KEY environment variable');
+        this.logger.log('🔗 RENDER: Get API key from https://app.sendgrid.com/settings/api_keys');
         this.sendGridInitialized = false;
       }
     } else if (isVercel) {
@@ -444,16 +444,16 @@ export class GmailService {
         );
         
         if (apiKeyError) {
-          this.logger.error('🔑 [SENDGRID] API KEY ERROR for Poorani!');
-          this.logger.error('📧 [RENDER] Check SendGrid API key in environment variables');
+          this.logger.warn('🔑 [SENDGRID] API KEY ISSUE - will use demo mode');
+          this.logger.log('📧 [RENDER] Check SendGrid API key in environment variables');
         }
       }
       
       // Log current environment for debugging
-      this.logger.error(`🔧 [RENDER] Current email config:`);
-      this.logger.error(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
-      this.logger.error(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING'}`);
-      this.logger.error(`   - RENDER env: ${process.env.RENDER}`);
+      this.logger.log(`🔧 [RENDER] Current email config:`);
+      this.logger.log(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
+      this.logger.log(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING'}`);
+      this.logger.log(`   - RENDER env: ${process.env.RENDER}`);
       
       return false;
     }
