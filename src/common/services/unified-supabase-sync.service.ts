@@ -256,25 +256,32 @@ export class UnifiedSupabaseSyncService {
    * Sync staff data to Supabase Staff table
    */
   async syncStaff(staff: any): Promise<void> {
-    this.logger.log(`🚀 [RENDER] Starting staff sync to Supabase for: ${staff.email}`);
-    
-    // Prepare data for Supabase Staff table
-    const supabaseData = {
-      id: staff.id,
-      name: staff.name,
-      email: staff.email,
-      role: staff.role,
-      department: staff.department || 'General',
-      position: staff.position || 'Staff Member',
-      status: staff.status || 'ACTIVE',
-      hasAccess: staff.hasAccess !== undefined ? staff.hasAccess : true,
-      verified: staff.verified !== undefined ? staff.verified : true,
-      clientName: staff.clientName || 'Available for Assignment',
-      createdAt: staff.createdAt || new Date().toISOString(),
-      updatedAt: staff.updatedAt || new Date().toISOString(),
-      // Add password hash for Supabase (if available)
-      passwordHash: staff.password ? (staff.password.startsWith('$2b$') ? staff.password : null) : null
-    };
+    try {
+      // Validate staff data
+      if (!staff || !staff.email) {
+        this.logger.warn('⚠️ [SYNC] Invalid staff data provided for sync - missing email');
+        return;
+      }
+
+      this.logger.log(`🚀 [RENDER] Starting staff sync to Supabase for: ${staff.email}`);
+      
+      // Prepare data for Supabase Staff table with validation
+      const supabaseData = {
+        id: staff.id || null,
+        name: staff.name || 'Unknown',
+        email: staff.email,
+        role: staff.role || 'EMPLOYEE',
+        department: staff.department || 'General',
+        position: staff.position || 'Staff Member',
+        status: staff.status || 'ACTIVE',
+        hasAccess: staff.hasAccess !== undefined ? staff.hasAccess : true,
+        verified: staff.verified !== undefined ? staff.verified : true,
+        clientName: staff.clientName || 'Available for Assignment',
+        createdAt: staff.createdAt ? (typeof staff.createdAt === 'string' ? staff.createdAt : staff.createdAt.toISOString()) : new Date().toISOString(),
+        updatedAt: staff.updatedAt ? (typeof staff.updatedAt === 'string' ? staff.updatedAt : staff.updatedAt.toISOString()) : new Date().toISOString(),
+        // Add password hash for Supabase (if available)
+        passwordHash: staff.password ? (staff.password.startsWith('$2b$') ? staff.password : null) : null
+      };
     
     this.logger.log(`💾 [RENDER] Staff data prepared for Supabase:`, {
       id: supabaseData.id,
@@ -315,14 +322,19 @@ export class UnifiedSupabaseSyncService {
       }
     }
     
-    if (!syncSuccess) {
-      this.logger.warn('⚠️ Staff sync to Supabase failed - continuing with local operations');
-      this.logger.warn('💡 Supabase sync is optional - email and core functionality will continue working');
-      this.logger.warn('🔗 To fix: Check Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
-      this.logger.warn('📧 Email notifications will still work via Gmail/SendGrid service');
-      
-      // Don't throw error - allow application to continue
-      // This ensures email functionality is not blocked by Supabase sync issues
+      if (!syncSuccess) {
+        this.logger.warn('⚠️ Staff sync to Supabase failed - continuing with local operations');
+        this.logger.warn('💡 Supabase sync is optional - email and core functionality will continue working');
+        this.logger.warn('🔗 To fix: Check Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+        this.logger.warn('📧 Email notifications will still work via Gmail/SendGrid service');
+        
+        // Don't throw error - allow application to continue
+        // This ensures email functionality is not blocked by Supabase sync issues
+      }
+    } catch (error) {
+      this.logger.error('❌ [SYNC] Critical error during staff sync:', error);
+      this.logger.warn('⚠️ [SYNC] Continuing without Supabase sync - local operations unaffected');
+      // Don't throw error to prevent breaking the main application flow
     }
   }
 

@@ -18,10 +18,24 @@ import { StaffModule } from '../staff/staff.module';
     forwardRef(() => StaffModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (config: ConfigService) => ({
-        secret: config.get('JWT_SECRET') || 'demo-secret-key',
-        signOptions: { expiresIn: '1d' },
-      }),
+      useFactory: async (config: ConfigService) => {
+        const jwtSecret = config.get('JWT_SECRET') || 'demo-secret-key-change-in-production-use-strong-random-key-at-least-32-characters-long';
+        
+        return {
+          secret: jwtSecret,
+          signOptions: { 
+            expiresIn: '8h', // Reduced from 1 day for better security
+            issuer: 'business-loan-backend',
+            audience: 'business-loan-frontend',
+            algorithm: 'HS256'
+          },
+          verifyOptions: {
+            issuer: 'business-loan-backend',
+            audience: 'business-loan-frontend',
+            algorithms: ['HS256']
+          }
+        };
+      },
       inject: [ConfigService],
     }),
   ],

@@ -1,9 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
+import { EnvironmentValidationService } from './config/env.validation';
 
 async function bootstrap() {
   console.log('🚀 Starting NestJS application...');
+  
+  // Validate environment variables before starting
+  const envValidator = new EnvironmentValidationService();
+  envValidator.validateCriticalEnvironmentVariables();
+  envValidator.validateOptionalVariables();
+  
   const isProduction = process.env.NODE_ENV === 'production';
   const isRender = process.env.RENDER === 'true';
   const isVercel = process.env.VERCEL === '1';
@@ -17,16 +25,43 @@ async function bootstrap() {
   });
   console.log('✅ NestJS application created successfully');
 
+  // Security middleware - Helmet for comprehensive security headers
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "https:"],
+        fontSrc: ["'self'", "https:", "data:"],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'self'"],
+        frameSrc: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Disable for API compatibility
+    hsts: {
+      maxAge: 31536000, // 1 year
+      includeSubDomains: true,
+      preload: true
+    },
+    noSniff: true,
+    xssFilter: true,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" }
+  }));
+
   // Enhanced validation pipe for production
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: false, // Allow additional properties but ignore them
+      forbidNonWhitelisted: true, // Reject unknown properties for security
       transform: true,
       transformOptions: {
         enableImplicitConversion: true, // Better type conversion
       },
       disableErrorMessages: isProduction, // Hide detailed errors in production
+      forbidUnknownValues: true, // Additional security
     }),
   );
 
@@ -77,10 +112,15 @@ async function bootstrap() {
         return callback(null, true);
       }
       
-      // In production, be more permissive to avoid blocking issues
+      // In production, use environment variable for allowed origins
       if (isProduction) {
-        console.log('⚠️ CORS allowing origin in production mode:', origin);
-        return callback(null, true);
+        const productionOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+        if (productionOrigins.some(allowed => origin.includes(allowed))) {
+          console.log('✅ CORS allowed production origin:', origin);
+          return callback(null, true);
+        }
+        console.log('⚠️ CORS blocked unauthorized origin in production:', origin);
+        return callback(new Error('Not allowed by CORS'), false);
       }
       
       console.log('❌ CORS blocked origin:', origin);

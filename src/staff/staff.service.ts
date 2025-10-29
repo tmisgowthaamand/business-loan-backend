@@ -317,7 +317,7 @@ export class StaffService {
         id: 2,
         name: 'Pankil',
         email: 'govindamarketing9998@gmail.com',
-        password: await bcrypt.hash('pankil123', 10),
+        password: await bcrypt.hash('pankil123', 12),
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'Administrator',
@@ -333,7 +333,7 @@ export class StaffService {
         id: 10,
         name: 'Admin User',
         email: 'admin@businessloan.com',
-        password: await bcrypt.hash('admin123', 10),
+        password: await bcrypt.hash('admin123', 12),
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'Business Administrator',
@@ -349,7 +349,7 @@ export class StaffService {
         id: 11,
         name: 'Venkat',
         email: 'gowthaamaneswar1998@gmail.com',
-        password: await bcrypt.hash('venkat123', 10),
+        password: await bcrypt.hash('venkat123', 12),
         role: StaffRole.EMPLOYEE,
         department: 'Operations',
         position: 'Manager',
@@ -365,7 +365,7 @@ export class StaffService {
         id: 12,
         name: 'Dinesh',
         email: 'dinesh@gmail.com',
-        password: await bcrypt.hash('dinesh123', 10),
+        password: await bcrypt.hash('dinesh123', 12),
         role: StaffRole.EMPLOYEE,
         department: 'Operations',
         position: 'Employee',
@@ -381,7 +381,7 @@ export class StaffService {
         id: 13,
         name: 'Harish',
         email: 'newacttmis@gmail.com',
-        password: await bcrypt.hash('harish123', 10),
+        password: await bcrypt.hash('harish123', 12),
         role: StaffRole.ADMIN,
         department: 'Client Management',
         position: 'Client Manager',
@@ -397,7 +397,7 @@ export class StaffService {
         id: 14,
         name: 'Nunciya',
         email: 'tmsnunciya59@gmail.com',
-        password: await bcrypt.hash('12345678', 10),
+        password: await bcrypt.hash('12345678', 12),
         role: StaffRole.ADMIN,
         department: 'Administration',
         position: 'Administrator',
@@ -458,7 +458,7 @@ export class StaffService {
       }
 
       // Hash password
-      const hashedPassword = await bcrypt.hash(createStaffDto.password, 10);
+      const hashedPassword = await bcrypt.hash(createStaffDto.password, 12);
 
       // Generate access token
       const accessToken = this.generateAccessToken();
@@ -886,7 +886,7 @@ export class StaffService {
 
     // Hash new password if provided
     if (updateStaffDto.password) {
-      staff.password = await bcrypt.hash(updateStaffDto.password, 10);
+      staff.password = await bcrypt.hash(updateStaffDto.password, 12);
     }
 
     staff.updatedAt = new Date();
@@ -1217,56 +1217,73 @@ export class StaffService {
 
   async verifyAccessToken(token: string): Promise<any> {
     try {
+      // Validate and sanitize token input
+      const trimmedToken = this.validateAccessToken(token);
+      this.logger.log(`🔐 Verifying access token: ${trimmedToken.substring(0, 8)}...`);
+
       // First check in-memory staff (for backward compatibility)
-      let staff = this.staff.find(s => s.accessToken === token);
+      let staff = this.staff.find(s => s.accessToken === trimmedToken);
       let isSupabaseUser = false;
 
       // If not found in memory, check Supabase
       if (!staff) {
-        const { data: supabaseUsers, error } = await this.supabaseService.client
-          .from('User')
-          .select('*')
-          .eq('inviteToken', token)
-          .limit(1);
+        this.logger.log('🔍 Token not found in memory, checking Supabase...');
+        
+        try {
+          const { data: supabaseUsers, error } = await this.supabaseService.client
+            .from('User')
+            .select('*')
+            .eq('inviteToken', trimmedToken)
+            .limit(1);
 
-        if (error) {
-          this.logger.error('Error checking Supabase for token:', error);
+          if (error) {
+            this.logger.error('Error checking Supabase for token:', error);
+            throw new Error('Invalid access token');
+          }
+
+          if (!supabaseUsers || supabaseUsers.length === 0) {
+            this.logger.warn(`❌ Access token not found in Supabase: ${trimmedToken.substring(0, 8)}...`);
+            throw new Error('Invalid access token');
+          }
+
+          const supabaseUser = supabaseUsers[0];
+          
+          // Check token expiry
+          if (!supabaseUser.tokenExpiry || new Date(supabaseUser.tokenExpiry) < new Date()) {
+            this.logger.warn(`❌ Access token expired for user: ${supabaseUser.email}`);
+            throw new Error('Access token has expired');
+          }
+
+          this.logger.log(`✅ Found valid token in Supabase for user: ${supabaseUser.email}`);
+          
+          isSupabaseUser = true;
+          
+          // Convert Supabase user to staff format for processing
+          staff = {
+            id: supabaseUser.id,
+            name: supabaseUser.name,
+            email: supabaseUser.email,
+            role: supabaseUser.role as StaffRole,
+            status: StaffStatus.PENDING,
+            hasAccess: false,
+            accessToken: supabaseUser.inviteToken,
+            accessTokenExpiry: new Date(supabaseUser.tokenExpiry),
+            createdAt: new Date(supabaseUser.createdAt),
+            updatedAt: new Date(supabaseUser.createdAt),
+            password: supabaseUser.passwordHash || '',
+            createdBy: 'Admin'
+          };
+        } catch (supabaseError) {
+          this.logger.error('Error during Supabase token verification:', supabaseError);
           throw new Error('Invalid access token');
         }
-
-        if (!supabaseUsers || supabaseUsers.length === 0) {
-          throw new Error('Invalid access token');
-        }
-
-        const supabaseUser = supabaseUsers[0];
-        
-        // Check token expiry
-        if (!supabaseUser.tokenExpiry || new Date(supabaseUser.tokenExpiry) < new Date()) {
-          throw new Error('Access token has expired');
-        }
-
-        isSupabaseUser = true;
-        
-        // Convert Supabase user to staff format for processing
-        staff = {
-          id: supabaseUser.id,
-          name: supabaseUser.name,
-          email: supabaseUser.email,
-          role: supabaseUser.role as StaffRole,
-          status: StaffStatus.PENDING,
-          hasAccess: false,
-          accessToken: supabaseUser.inviteToken,
-          accessTokenExpiry: new Date(supabaseUser.tokenExpiry),
-          createdAt: new Date(supabaseUser.createdAt),
-          updatedAt: new Date(supabaseUser.createdAt),
-          password: supabaseUser.passwordHash || '',
-          createdBy: 'Admin'
-        };
       } else {
         // Check token expiry for in-memory staff
         if (!staff.accessTokenExpiry || staff.accessTokenExpiry < new Date()) {
+          this.logger.warn(`❌ Access token expired for in-memory user: ${staff.email}`);
           throw new Error('Access token has expired');
         }
+        this.logger.log(`✅ Found valid token in memory for user: ${staff.email}`);
       }
 
       if (isSupabaseUser) {
@@ -1328,8 +1345,8 @@ export class StaffService {
       const { password, ...staffWithoutPassword } = staff;
       return { staff: staffWithoutPassword, authToken };
     } catch (error) {
-      this.logger.error('❌ Error verifying access token:', error);
-      throw error;
+      const handledError = this.handleAuthenticationError(error, 'Token verification');
+      throw handledError;
     }
   }
 
@@ -2337,6 +2354,80 @@ export class StaffService {
         this.logger.log(`⏳ [RENDER] Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
+    }
+  }
+
+  /**
+   * Enhanced error handling for authentication and token verification
+   */
+  private handleAuthenticationError(error: any, context: string): Error {
+    this.logger.error(`❌ [AUTH] ${context} error:`, error);
+    
+    // Map specific error types to user-friendly messages
+    if (error.message?.includes('Invalid access token')) {
+      return new Error('Access token is invalid or has been revoked. Please request a new access link.');
+    }
+    
+    if (error.message?.includes('Access token has expired')) {
+      return new Error('Access token has expired. Please request a new access link.');
+    }
+    
+    if (error.message?.includes('Supabase')) {
+      this.logger.warn('⚠️ [AUTH] Supabase connection issue - falling back to local authentication');
+      return new Error('Authentication service temporarily unavailable. Please try again in a moment.');
+    }
+    
+    if (error.message?.includes('Staff not found')) {
+      return new Error('Staff member not found. Please contact an administrator.');
+    }
+    
+    // Generic fallback
+    return new Error('Authentication failed. Please check your credentials and try again.');
+  }
+
+  /**
+   * Validate and sanitize access token input
+   */
+  private validateAccessToken(token: any): string {
+    if (!token) {
+      throw new Error('Access token is required');
+    }
+    
+    if (typeof token !== 'string') {
+      throw new Error('Invalid access token format');
+    }
+    
+    const trimmedToken = token.trim();
+    if (trimmedToken === '') {
+      throw new Error('Access token cannot be empty');
+    }
+    
+    if (trimmedToken.length < 8) {
+      throw new Error('Invalid access token format');
+    }
+    
+    return trimmedToken;
+  }
+
+  /**
+   * Check if Supabase service is available and healthy
+   */
+  private async isSupabaseHealthy(): Promise<boolean> {
+    try {
+      if (!this.supabaseService?.client) {
+        return false;
+      }
+      
+      // Simple health check
+      const { error } = await this.supabaseService.client
+        .from('User')
+        .select('id')
+        .limit(1);
+        
+      return !error;
+    } catch (error) {
+      this.logger.warn('⚠️ [HEALTH] Supabase health check failed:', error.message);
+      return false;
     }
   }
 }
