@@ -100,12 +100,6 @@ export class UnifiedSupabaseSyncService {
 
       if (error) {
         this.logger.error(`❌ [DEPLOYMENT] Auto-sync error for ${tableName}:`, error);
-        this.logger.error(`❌ [DEPLOYMENT] Error details:`, {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
         
         // Provide specific guidance for common errors
         if (error.code === 'PGRST205') {
@@ -113,10 +107,6 @@ export class UnifiedSupabaseSyncService {
           this.logger.error(`🔗 Verify table exists: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor`);
         } else if (error.code === 'PGRST301') {
           this.logger.error(`💡 Permission denied for table '${tableName}'. Check RLS policies.`);
-        } else if (error.code === 'PGRST204') {
-          this.logger.error(`💡 Column mismatch for table '${tableName}'. Check schema compatibility.`);
-        } else if (error.code === '42703') {
-          this.logger.error(`💡 Column does not exist in table '${tableName}'. Check field mapping.`);
         }
         
         return { success: false, error };
@@ -268,7 +258,7 @@ export class UnifiedSupabaseSyncService {
   async syncStaff(staff: any): Promise<void> {
     this.logger.log(`🚀 [RENDER] Starting staff sync to Supabase for: ${staff.email}`);
     
-    // Prepare data for Supabase User table (correct schema mapping)
+    // Prepare data for Supabase Staff table
     const supabaseData = {
       id: staff.id,
       name: staff.name,
@@ -276,27 +266,26 @@ export class UnifiedSupabaseSyncService {
       role: staff.role,
       department: staff.department || 'General',
       position: staff.position || 'Staff Member',
-      // Map staff fields to User table fields
-      passwordHash: staff.password ? (staff.password.startsWith('$2b$') ? staff.password : null) : null,
-      inviteToken: staff.accessToken || null,
-      tokenExpiry: staff.accessTokenExpiry ? staff.accessTokenExpiry.toISOString() : null,
+      status: staff.status || 'ACTIVE',
+      hasAccess: staff.hasAccess !== undefined ? staff.hasAccess : true,
+      verified: staff.verified !== undefined ? staff.verified : true,
+      clientName: staff.clientName || 'Available for Assignment',
       createdAt: staff.createdAt || new Date().toISOString(),
       updatedAt: staff.updatedAt || new Date().toISOString(),
-      // Remove fields that don't exist in User table
-      // status, hasAccess, verified, clientName are not in User table schema
+      // Add password hash for Supabase (if available)
+      passwordHash: staff.password ? (staff.password.startsWith('$2b$') ? staff.password : null) : null
     };
     
     this.logger.log(`💾 [RENDER] Staff data prepared for Supabase:`, {
       id: supabaseData.id,
       email: supabaseData.email,
       role: supabaseData.role,
-      department: supabaseData.department,
-      position: supabaseData.position,
-      hasInviteToken: !!supabaseData.inviteToken
+      hasAccess: supabaseData.hasAccess,
+      verified: supabaseData.verified
     });
 
-    // Use the correct Supabase table name for staff (User table)
-    const tableVariations = ['User', 'user', 'Staff', 'staff'];
+    // Try different table name variations to handle case sensitivity
+    const tableVariations = ['Staff', 'staff', 'STAFF'];
     let syncSuccess = false;
     
     for (const tableName of tableVariations) {
@@ -327,15 +316,10 @@ export class UnifiedSupabaseSyncService {
     }
     
     if (!syncSuccess) {
-      this.logger.warn('⚠️ [RENDER] Staff sync to Supabase failed - continuing with local operations');
-      this.logger.warn('💡 [RENDER] Supabase sync is optional - email and core functionality will continue working');
-      this.logger.warn('🔗 [RENDER] Possible fixes:');
-      this.logger.warn('   1. Check if User table exists in Supabase');
-      this.logger.warn('   2. Verify table schema matches expected fields');
-      this.logger.warn('   3. Check RLS policies allow INSERT operations');
-      this.logger.warn('   4. Verify SUPABASE_URL and SUPABASE_ANON_KEY are correct');
-      this.logger.warn('📧 [RENDER] Email notifications will still work via Gmail/SendGrid service');
-      this.logger.warn('🌐 [RENDER] Dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+      this.logger.warn('⚠️ Staff sync to Supabase failed - continuing with local operations');
+      this.logger.warn('💡 Supabase sync is optional - email and core functionality will continue working');
+      this.logger.warn('🔗 To fix: Check Supabase dashboard: https://supabase.com/dashboard/project/vxtpjsymbcirszksrafg/editor');
+      this.logger.warn('📧 Email notifications will still work via Gmail/SendGrid service');
       
       // Don't throw error - allow application to continue
       // This ensures email functionality is not blocked by Supabase sync issues

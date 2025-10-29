@@ -66,13 +66,13 @@ export class GmailService {
           this.logger.error('❌ RENDER: SendGrid object type:', typeof sgMail);
           this.logger.error('❌ RENDER: setApiKey method type:', typeof sgMail?.setApiKey);
           this.sendGridInitialized = false;
-          this.logger.warn('⚠️ RENDER: SendGrid setup failed - will use demo mode');
-          this.logger.log('🔧 RENDER: Try installing @sendgrid/mail: npm install @sendgrid/mail');
+          this.logger.error('⚠️ RENDER: NO EMAIL DELIVERY POSSIBLE - SendGrid setup failed!');
+          this.logger.error('🔧 RENDER: Try installing @sendgrid/mail: npm install @sendgrid/mail');
         }
       } else {
-        this.logger.warn('⚠️ RENDER: SENDGRID_API_KEY missing or invalid!');
-        this.logger.log('🔧 RENDER: Add SENDGRID_API_KEY environment variable');
-        this.logger.log('🔗 RENDER: Get API key from https://app.sendgrid.com/settings/api_keys');
+        this.logger.error('❌ RENDER: SENDGRID_API_KEY missing or invalid!');
+        this.logger.error('⚠️ RENDER: Add SENDGRID_API_KEY environment variable');
+        this.logger.error('🔗 RENDER: Get API key from https://app.sendgrid.com/settings/api_keys');
         this.sendGridInitialized = false;
       }
     } else if (isVercel) {
@@ -133,7 +133,7 @@ export class GmailService {
     this.logger.log(`🌐 Environment: ${isRender ? 'Render' : isVercel ? 'Vercel' : 'Local'}`);
     this.logger.log(`🔐 App Password: ${gmailPassword.length > 10 ? gmailPassword.substring(0, 4) + '****' + gmailPassword.substring(gmailPassword.length - 4) : 'NOT_CONFIGURED'}`);
 
-    // Enhanced Render-specific configuration with anti-spam optimizations
+    // Enhanced Render-specific configuration with fallback options
     const renderConfig = isRender ? {
       service: 'gmail',
       host: 'smtp.gmail.com',
@@ -161,9 +161,6 @@ export class GmailService {
       // Additional Render optimizations
       ignoreTLS: false,
       requireTLS: true,
-      // Anti-spam headers
-      name: 'business-loan-system.com', // HELO/EHLO name
-      localAddress: undefined, // Let system choose
     } : {};
 
     // Production-optimized transporter configuration
@@ -249,13 +246,13 @@ export class GmailService {
           this.logger.log(`✅ [RENDER] SendGrid SUCCESS: Email sent to ${recipientEmail}`);
           return true;
         }
-        this.logger.warn(`⚠️ [RENDER] SendGrid FAILED for ${recipientEmail} - trying next method`);
+        this.logger.error(`❌ [RENDER] SendGrid FAILED for ${recipientEmail}`);
       } else {
-        this.logger.warn(`⚠️ [RENDER] SendGrid NOT INITIALIZED - cannot send to ${recipientEmail}`);
-        this.logger.log(`🔧 [RENDER] SendGrid setup required (optional - demo mode available):`);
-        this.logger.log(`   1. Add SENDGRID_API_KEY to Render environment`);
-        this.logger.log(`   2. Add SENDGRID_FROM_EMAIL to Render environment`);
-        this.logger.log(`   3. Verify sender email in SendGrid dashboard`);
+        this.logger.error(`❌ [RENDER] SendGrid NOT INITIALIZED - cannot send to ${recipientEmail}`);
+        this.logger.error(`🔧 [RENDER] SendGrid setup required:`);
+        this.logger.error(`   1. Add SENDGRID_API_KEY to Render environment`);
+        this.logger.error(`   2. Add SENDGRID_FROM_EMAIL to Render environment`);
+        this.logger.error(`   3. Verify sender email in SendGrid dashboard`);
       }
       
       // Try webhook as backup with enhanced logging
@@ -265,15 +262,12 @@ export class GmailService {
         this.logger.log(`✅ [RENDER] Webhook SUCCESS: Email sent to ${recipientEmail}`);
         return true;
       }
-      this.logger.warn(`⚠️ [RENDER] Webhook FAILED for ${recipientEmail} - switching to demo mode`);
+      this.logger.error(`❌ [RENDER] Webhook FAILED for ${recipientEmail}`);
       
       // Final fallback: Demo mode with detailed instructions
       this.logger.warn(`⚠️ [RENDER] All email methods FAILED for ${recipientEmail}`);
-      this.logger.log(`📋 [RENDER] SWITCHING TO DEMO MODE - email will be logged for manual sending`);
-      this.logger.log(`✅ [RENDER] DEMO MODE ACTIVATED - this is NOT an error, just a fallback`);
-      const demoResult = await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
-      this.logger.log(`✅ [RENDER] DEMO MODE SUCCESS - verification link logged for ${recipientEmail}`);
-      return demoResult;
+      this.logger.warn(`📋 [RENDER] Using demo mode - email will be logged only`);
+      return await this.sendViaDemo(recipientEmail, recipientName, accessLink, role);
     }
 
     // VERCEL DEPLOYMENT: Try SendGrid then SMTP
@@ -323,82 +317,52 @@ export class GmailService {
     }
 
     try {
-      // Use a verified sender email - prioritize verified Gmail addresses
-      let fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
-                     this.config.get('SENDGRID_VERIFIED_EMAIL') || 
-                     process.env.SENDGRID_FROM_EMAIL || 
-                     process.env.SENDGRID_VERIFIED_EMAIL;
-      
-      // If no verified email is configured, use the Gmail account as fallback
-      if (!fromEmail || fromEmail === 'noreply@yourdomain.com' || fromEmail === 'noreply@businessloan.com') {
-        // Use the same Gmail account that's configured for SMTP
-        const gmailAccount = this.config.get('GMAIL_EMAIL') || 
-                           this.config.get('GMAIL_USER') || 
-                           process.env.GMAIL_EMAIL || 
-                           'gokrishna98@gmail.com';
-        fromEmail = gmailAccount;
-        
-        this.logger.warn('⚠️ SENDGRID: No verified sender email configured, using Gmail account:', fromEmail);
-        this.logger.warn('🔧 SENDGRID SETUP REQUIRED:');
-        this.logger.warn('   1. Go to https://app.sendgrid.com/settings/sender_auth');
-        this.logger.warn('   2. Click "Verify a Single Sender"');
-        this.logger.warn(`   3. Add and verify: ${fromEmail}`);
-        this.logger.warn('   4. Set SENDGRID_FROM_EMAIL environment variable');
-      }
-      
+      // Use a verified sender email - this should be set in environment variables
+      const fromEmail = this.config.get('SENDGRID_FROM_EMAIL') || 
+                       this.config.get('SENDGRID_VERIFIED_EMAIL') || 
+                       process.env.SENDGRID_FROM_EMAIL || 
+                       process.env.SENDGRID_VERIFIED_EMAIL ||
+                       'noreply@yourdomain.com'; // This should be replaced with actual verified email
       const isRender = process.env.RENDER === 'true';
       
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(fromEmail)) {
-        this.logger.error('❌ SENDGRID: Invalid from email format:', fromEmail);
-        return false;
+      // Validate that we have a proper from email
+      if (fromEmail === 'noreply@yourdomain.com' || fromEmail === 'noreply@businessloan.com') {
+        this.logger.error('❌ SENDGRID: No verified sender email configured!');
+        this.logger.error('⚠️ SENDGRID: Current from email needs verification:', fromEmail);
+        this.logger.error('🔧 SENDGRID SETUP STEPS:');
+        this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
+        this.logger.error('   2. Click "Create New Sender" or "Verify Single Sender"');
+        this.logger.error('   3. Add your email address (can be Gmail, but must be verified)');
+        this.logger.error('   4. Check your email and click verification link');
+        this.logger.error('   5. Update SENDGRID_FROM_EMAIL in Render dashboard');
+        this.logger.error('   6. Redeploy your Render service');
+        this.logger.error('🔗 SENDGRID: Verify sender at https://app.sendgrid.com/settings/sender_auth');
+        
+        // For now, allow the process to continue but log the issue
+        this.logger.warn('⚠️ CONTINUING WITH UNVERIFIED EMAIL - EMAILS MAY FAIL');
       }
       
-      // Validate recipient email format
-      if (!emailRegex.test(recipientEmail)) {
-        this.logger.error('❌ SENDGRID: Invalid recipient email format:', recipientEmail);
-        return false;
-      }
-      
-      // Create a clean, simple message structure to avoid SendGrid validation errors
       const msg = {
-        to: recipientEmail.trim(),
+        to: recipientEmail,
         from: {
-          email: fromEmail.trim(),
+          email: fromEmail,
           name: 'Business Loan Management System'
         },
-        subject: 'Account Activation Required - Business Loan Management System',
+        subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
-        text: this.generatePlainTextTemplate(recipientName, accessLink, role),
-        // Minimal headers to avoid validation issues
+        // Add additional headers for better deliverability
         headers: {
-          'X-Mailer': 'Business Loan Management System',
-          'Reply-To': fromEmail.trim()
+          'X-Mailer': 'Business Loan System',
+          'X-Priority': '3',
         },
-        // Disable tracking to avoid issues
-        trackingSettings: {
-          clickTracking: { enable: false },
-          openTracking: { enable: false },
-          subscriptionTracking: { enable: false }
-        },
-        // Simple mail settings
-        mailSettings: {
-          sandboxMode: { enable: false }
-        },
-        // Add categories for organization
-        categories: ['staff-activation']
+        // Add tracking settings for Render
+        ...(isRender && {
+          trackingSettings: {
+            clickTracking: { enable: false },
+            openTracking: { enable: false }
+          }
+        })
       };
-
-      // Validate message structure
-      if (!msg.to || !msg.from.email || !msg.subject || !msg.html) {
-        this.logger.error('❌ SENDGRID: Invalid message structure');
-        this.logger.error('   - To:', msg.to);
-        this.logger.error('   - From:', msg.from.email);
-        this.logger.error('   - Subject:', msg.subject);
-        this.logger.error('   - HTML length:', msg.html?.length || 0);
-        return false;
-      }
 
       this.logger.log(`📧 [SENDGRID] Sending to ${recipientEmail} (from: ${fromEmail})`);
       this.logger.log(`📧 [SENDGRID] API Key: ${this.config.get('SENDGRID_API_KEY') ? 'Present ✅' : 'Missing ❌'}`);
@@ -414,85 +378,51 @@ export class GmailService {
       this.logger.log(`📧 [SENDGRID] Message ID: ${result[0]?.headers?.['x-message-id'] || 'Not provided'}`);
       return true;
     } catch (error) {
-      this.logger.error(`❌ [SENDGRID] FAILED for ${recipientEmail}:`);
-      this.logger.error(`   - Error message: ${error.message}`);
+      this.logger.error(`❌ [SENDGRID] FAILED for ${recipientEmail}:`, error.message);
       
-      // Enhanced error logging for debugging
+      // Enhanced error logging for Render debugging
       this.logger.error(`🔍 [SENDGRID] Error details for ${recipientEmail}:`);
       this.logger.error(`   - Error type: ${error.constructor.name}`);
       this.logger.error(`   - Error code: ${error.code || 'Not provided'}`);
       this.logger.error(`   - HTTP status: ${error.response?.status || 'Not provided'}`);
       
       if (error.response?.body?.errors) {
-        this.logger.error('📧 [SENDGRID] API errors:');
-        const errors = error.response.body.errors;
-        
-        errors.forEach((err, index) => {
-          this.logger.error(`   Error ${index + 1}:`);
-          this.logger.error(`     - Message: ${err.message || 'No message'}`);
-          this.logger.error(`     - Field: ${err.field || 'No field'}`);
-          this.logger.error(`     - Help: ${err.help || 'No help available'}`);
-        });
+        this.logger.error('📧 [SENDGRID] API errors:', JSON.stringify(error.response.body.errors, null, 2));
         
         // Check for specific error types
+        const errors = error.response.body.errors;
         const senderIdentityError = errors.find(err => 
           err.message?.includes('verified Sender Identity') || 
-          err.message?.includes('sender identity') ||
-          err.field === 'from' ||
-          err.message?.includes('The from address does not match a verified Sender Identity')
+          err.field === 'from'
         );
         
         if (senderIdentityError) {
-          this.logger.error('🚨 [SENDGRID] SENDER IDENTITY ERROR!');
-          this.logger.error('📧 IMMEDIATE ACTION REQUIRED:');
+          this.logger.error('🚨 [SENDGRID] SENDER IDENTITY ERROR for Poorani!');
+          this.logger.error('📧 [RENDER] IMMEDIATE ACTION REQUIRED:');
           this.logger.error('   1. Go to https://app.sendgrid.com/settings/sender_auth');
-          this.logger.error('   2. Click "Verify a Single Sender"');
-          this.logger.error(`   3. Add and verify this email: ${this.config.get('GMAIL_EMAIL') || 'gokrishna98@gmail.com'}`);
-          this.logger.error('   4. Set SENDGRID_FROM_EMAIL environment variable to the verified email');
-          this.logger.error('   5. Restart the application');
+          this.logger.error('   2. Verify sender email: gokrishna98@gmail.com');
+          this.logger.error('   3. Update Render environment: SENDGRID_FROM_EMAIL=gokrishna98@gmail.com');
+          this.logger.error('   4. Redeploy Render service');
           this.logger.error(`   Current from email: ${this.config.get('SENDGRID_FROM_EMAIL') || 'NOT SET'}`);
         }
         
         // Check for API key issues
         const apiKeyError = errors.find(err => 
           err.message?.includes('API key') || 
-          err.message?.includes('Unauthorized') ||
-          err.message?.includes('authentication')
+          err.message?.includes('Unauthorized')
         );
         
         if (apiKeyError) {
-          this.logger.error('🔑 [SENDGRID] API KEY ISSUE!');
-          this.logger.error('   1. Check if SENDGRID_API_KEY is set correctly');
-          this.logger.error('   2. Verify API key starts with "SG."');
-          this.logger.error('   3. Ensure API key has "Mail Send" permissions');
-          this.logger.error(`   Current API key status: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
+          this.logger.error('🔑 [SENDGRID] API KEY ERROR for Poorani!');
+          this.logger.error('📧 [RENDER] Check SendGrid API key in environment variables');
         }
-
-        // Check for content/format issues
-        const contentError = errors.find(err => 
-          err.message?.includes('content') || 
-          err.message?.includes('invalid') ||
-          err.field === 'subject' ||
-          err.field === 'html'
-        );
-        
-        if (contentError) {
-          this.logger.error('📝 [SENDGRID] CONTENT/FORMAT ERROR!');
-          this.logger.error('   - Check email content format');
-          this.logger.error('   - Verify subject line is not empty');
-          this.logger.error('   - Ensure HTML content is valid');
-        }
-      } else if (error.response?.body) {
-        this.logger.error('📧 [SENDGRID] Response body:', JSON.stringify(error.response.body, null, 2));
       }
       
       // Log current environment for debugging
-      this.logger.error(`🔧 [SENDGRID] Current configuration:`);
-      this.logger.error(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present ✅' : 'MISSING ❌'}`);
-      this.logger.error(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING ❌'}`);
-      this.logger.error(`   - GMAIL_EMAIL: ${this.config.get('GMAIL_EMAIL') || 'MISSING ❌'}`);
-      this.logger.error(`   - Environment: ${process.env.NODE_ENV || 'development'}`);
-      this.logger.error(`   - Platform: ${process.env.RENDER ? 'Render' : process.env.VERCEL ? 'Vercel' : 'Local'}`);
+      this.logger.error(`🔧 [RENDER] Current email config:`);
+      this.logger.error(`   - SENDGRID_API_KEY: ${this.config.get('SENDGRID_API_KEY') ? 'Present' : 'MISSING'}`);
+      this.logger.error(`   - SENDGRID_FROM_EMAIL: ${this.config.get('SENDGRID_FROM_EMAIL') || 'MISSING'}`);
+      this.logger.error(`   - RENDER env: ${process.env.RENDER}`);
       
       return false;
     }
@@ -614,41 +544,12 @@ export class GmailService {
           address: currentEmail
         },
         to: recipientEmail,
-        subject: `Account Activation Required - Business Loan Management System`,
+        subject: `🎉 Welcome to Business Loan Management System - ${role} Access`,
         html: this.generateAccessEmailTemplate(recipientName, accessLink, role),
-        text: this.generatePlainTextTemplate(recipientName, accessLink, role),
         priority: 'normal' as const,
         headers: {
-          'X-Mailer': 'Business Loan Management System v1.0',
+          'X-Mailer': 'Business Loan System',
           'X-Priority': '3',
-          'X-MSMail-Priority': 'Normal',
-          'Importance': 'Normal',
-          'List-Unsubscribe': '<mailto:unsubscribe@businessloan.com>',
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-          'Message-ID': `<${Date.now()}.${recipientEmail.replace('@', '.')}@businessloan.com>`,
-          'Date': new Date().toUTCString(),
-          'MIME-Version': '1.0',
-          'Content-Type': 'multipart/alternative',
-          'X-Entity-Ref-ID': `staff-activation-${Date.now()}`,
-          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
-          'X-Spam-Status': 'No',
-          'X-Spam-Score': '0.0',
-          'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
-          'Reply-To': currentEmail,
-          'Return-Path': currentEmail,
-          'Sender': currentEmail,
-          'X-Original-Sender': currentEmail,
-          'Precedence': 'bulk',
-          'X-Bulk-Mail': 'true',
-          'X-Campaign-Type': 'transactional',
-          'X-Message-Type': 'account-verification',
-          'Authentication-Results': 'spf=pass smtp.mailfrom=' + currentEmail,
-          'X-Authenticated-Sender': currentEmail
-        },
-        envelope: {
-          from: currentEmail,
-          to: recipientEmail
         }
       };
       
@@ -704,18 +605,17 @@ export class GmailService {
     const platform = isRender ? 'Render' : isVercel ? 'Vercel' : 'Local';
     
     try {
+      this.logger.log(`📧 DEMO EMAIL MODE (${platform}): Email delivery simulation`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 ✅ DEMO EMAIL MODE (${platform}): VERIFICATION LINK READY`);
+      this.logger.log(`📧 🚨 POORANI EMAIL DELIVERY FAILED - MANUAL ACTION REQUIRED 🚨`);
+      this.logger.log(`📧 Please manually send the following email to Poorani:`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 📨 EMAIL DELIVERY SIMULATION - MANUAL ACTION REQUIRED`);
-      this.logger.log(`📧 Please manually send the following email to the staff member:`);
-      this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 TO: ${recipientEmail}`);
+      this.logger.log(`📧 TO: ${recipientEmail} (Poorani)`);
       this.logger.log(`📧 NAME: ${recipientName}`);
       this.logger.log(`📧 ROLE: ${role}`);
       this.logger.log(`📧 SUBJECT: Welcome to Business Loan Management System - ${role} Access`);
       this.logger.log(`📧 ===============================================`);
-      this.logger.log(`📧 🔗 VERIFICATION LINK (COPY THIS):`);
+      this.logger.log(`📧 🔗 VERIFICATION LINK FOR POORANI (COPY THIS):`);
       this.logger.log(`📧 ${accessLink}`);
       this.logger.log(`📧 ===============================================`);
       this.logger.log(`📧 📝 EMAIL TEMPLATE:`);
@@ -736,9 +636,8 @@ export class GmailService {
       // Try to send notification to admin webhook if available
       await this.notifyAdminOfEmailSuccess(recipientEmail, recipientName, accessLink, role);
       
-      this.logger.log(`✅ [DEMO MODE] Email template generated successfully for ${recipientEmail}`);
+      this.logger.log(`✅ Email template generated for ${recipientEmail}`);
       this.logger.log(`📧 👆 COPY THE VERIFICATION LINK ABOVE AND SEND IT MANUALLY`);
-      this.logger.log(`📧 ✅ STAFF CREATION SUCCESSFUL - Email delivery is in demo mode`);
       
       if (isRender) {
         this.logger.log(`📧 🌐 RENDER DEPLOYMENT - TO FIX AUTOMATIC EMAILS:`);
@@ -872,239 +771,88 @@ export class GmailService {
   }
 
   private generateAccessEmailTemplate(name: string, accessLink: string, role: StaffRole): string {
-    // Generate a more professional, spam-filter friendly email template
-    const currentDate = new Date().toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-    
     return `
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-        <title>Account Activation - Business Loan Management System</title>
-        <style type="text/css">
-            /* Anti-spam optimized styles */
-            body { 
-                font-family: Arial, Helvetica, sans-serif; 
-                line-height: 1.6; 
-                color: #333333; 
-                margin: 0; 
-                padding: 0; 
-                background-color: #f8f9fa;
-                -webkit-text-size-adjust: 100%;
-                -ms-text-size-adjust: 100%;
-            }
-            .email-container { 
-                max-width: 600px; 
-                margin: 20px auto; 
-                background-color: #ffffff; 
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-            }
-            .header { 
-                background-color: #0056b3; 
-                color: #ffffff; 
-                padding: 30px 20px; 
-                text-align: center; 
-                border-radius: 8px 8px 0 0;
-            }
-            .header h1 {
-                margin: 0;
-                font-size: 24px;
-                font-weight: normal;
-            }
-            .content { 
-                padding: 30px 20px;
-            }
-            .role-info { 
-                background-color: #f8f9fa;
-                border-left: 4px solid #0056b3;
-                padding: 15px;
-                margin: 20px 0;
-            }
-            .activation-section {
-                text-align: center;
-                margin: 30px 0;
-                padding: 20px;
-                background-color: #f8f9fa;
-                border-radius: 5px;
-            }
-            .activation-button { 
-                display: inline-block; 
-                background-color: #0056b3; 
-                color: #ffffff; 
-                padding: 12px 30px; 
-                text-decoration: none; 
-                border-radius: 5px; 
-                font-weight: bold;
-                margin: 15px 0;
-            }
-            .activation-button:hover {
-                background-color: #004494;
-            }
-            .security-notice { 
-                background-color: #fff3cd; 
-                border: 1px solid #ffeaa7; 
-                padding: 15px; 
-                border-radius: 5px; 
-                margin: 20px 0;
-            }
-            .footer { 
-                background-color: #f8f9fa; 
-                padding: 20px; 
-                text-align: center; 
-                border-top: 1px solid #e9ecef;
-                font-size: 12px; 
-                color: #6c757d;
-                border-radius: 0 0 8px 8px;
-            }
-            .text-link {
-                color: #0056b3;
-                word-break: break-all;
-            }
-            @media only screen and (max-width: 600px) {
-                .email-container {
-                    margin: 10px;
-                    width: auto !important;
-                }
-                .content {
-                    padding: 20px 15px;
-                }
-            }
+        <title>Welcome to Business Loan Management System</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+            .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 0; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { padding: 40px 30px; }
+            .role-badge { display: inline-block; background-color: ${role === 'ADMIN' ? '#e53e3e' : '#38a169'}; color: white; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; margin: 10px 0; }
+            .access-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 20px 0; transition: transform 0.2s; }
+            .access-button:hover { transform: translateY(-2px); }
+            .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
+            .footer { background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 0 0 10px 10px; font-size: 12px; color: #666; }
         </style>
     </head>
     <body>
-        <div class="email-container">
+        <div class="container">
             <div class="header">
-                <h1>Business Loan Management System</h1>
-                <p style="margin: 10px 0 0 0;">Account Activation Required</p>
+                <h1>🎉 Welcome to Business Loan Management System</h1>
+                <p>Your account has been created successfully!</p>
             </div>
             
             <div class="content">
-                <p>Dear ${name},</p>
+                <h2>Hello ${name}! 👋</h2>
                 
-                <p>Welcome to the Business Loan Management System. Your account has been successfully created and requires activation.</p>
+                <p>Congratulations! You have been granted access to the Business Loan Management System with the following role:</p>
                 
-                <div class="role-info">
-                    <strong>Account Details:</strong><br>
-                    Name: ${name}<br>
-                    Role: ${role}<br>
-                    Date Created: ${currentDate}
+                <div class="role-badge">${role}</div>
+                
+                <p><strong>🔐 One-Time Verification Required</strong></p>
+                <p>Click the button below to activate your account and complete the setup. This link can only be used once and will expire in 24 hours.</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${accessLink}" class="access-button">🚀 Activate My Account</a>
                 </div>
                 
-                <div class="activation-section">
-                    <p><strong>Action Required: Activate Your Account</strong></p>
-                    <p>Please click the button below to activate your account. This link is valid for 24 hours and can only be used once.</p>
-                    
-                    <a href="${accessLink}" class="activation-button">Activate Account</a>
-                    
-                    <p style="margin-top: 20px; font-size: 12px;">If the button doesn't work, copy and paste this link into your browser:</p>
-                    <p class="text-link" style="font-size: 12px;">${accessLink}</p>
-                </div>
-                
-                <div class="security-notice">
-                    <strong>Security Information:</strong>
-                    <ul style="margin: 10px 0; padding-left: 20px;">
-                        <li>This activation link expires in 24 hours</li>
-                        <li>The link can only be used once</li>
-                        <li>Do not share this link with others</li>
-                        <li>Contact support if you need assistance</li>
+                <div class="warning">
+                    <strong>⚠️ Important Security Notes:</strong>
+                    <ul>
+                        <li>This link is for one-time use only</li>
+                        <li>Do not share this link with anyone</li>
+                        <li>The link will expire in 24 hours</li>
+                        <li>After activation, you can login with your credentials</li>
                     </ul>
                 </div>
                 
-                <p><strong>Your ${role} privileges include:</strong></p>
-                <ul style="padding-left: 20px;">
+                <p><strong>🎯 What you can do as ${role}:</strong></p>
+                <ul>
                     ${role === 'ADMIN' 
                         ? `
-                        <li>Manage loan applications and documents</li>
-                        <li>Oversee staff members and permissions</li>
-                        <li>Access system analytics and reports</li>
-                        <li>Configure system settings</li>
+                        <li>📊 View and manage all loan applications</li>
+                        <li>👥 Manage staff members and permissions</li>
+                        <li>📈 Access detailed analytics and reports</li>
+                        <li>⚙️ Configure system settings</li>
+                        <li>🔧 Manage enquiries and documents</li>
                         `
                         : `
-                        <li>Process loan applications</li>
-                        <li>Manage client documents</li>
-                        <li>Update application statuses</li>
-                        <li>Communicate with clients</li>
+                        <li>📋 View and process loan applications</li>
+                        <li>📄 Manage documents and enquiries</li>
+                        <li>💼 Update application statuses</li>
+                        <li>📞 Communicate with clients</li>
                         `
                     }
                 </ul>
                 
-                <p>If you did not request this account or have questions, please contact your system administrator immediately.</p>
+                <p>If you have any questions or need assistance, please contact your system administrator.</p>
                 
                 <p>Best regards,<br>
-                Business Loan Management Team</p>
+                <strong>Business Loan Management Team</strong></p>
             </div>
             
             <div class="footer">
-                <p>Business Loan Management System<br>
-                This is an automated message - please do not reply</p>
-                <p>&copy; 2025 Business Loan Management System. All rights reserved.</p>
+                <p>© 2025 Business Loan Management System. All rights reserved.</p>
+                <p>This is an automated message. Please do not reply to this email.</p>
             </div>
         </div>
     </body>
     </html>
-    `;
-  }
-
-  private generatePlainTextTemplate(name: string, accessLink: string, role: StaffRole): string {
-    const currentDate = new Date().toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-    
-    return `
-Business Loan Management System
-Account Activation Required
-
-Dear ${name},
-
-Welcome to the Business Loan Management System. Your account has been successfully created and requires activation.
-
-Account Details:
-- Name: ${name}
-- Role: ${role}
-- Date Created: ${currentDate}
-
-ACTION REQUIRED: Activate Your Account
-
-Please copy and paste the following link into your browser to activate your account. This link is valid for 24 hours and can only be used once.
-
-Activation Link: ${accessLink}
-
-Security Information:
-- This activation link expires in 24 hours
-- The link can only be used once
-- Do not share this link with others
-- Contact support if you need assistance
-
-Your ${role} privileges include:
-${role === 'ADMIN' 
-  ? `- Manage loan applications and documents
-- Oversee staff members and permissions
-- Access system analytics and reports
-- Configure system settings`
-  : `- Process loan applications
-- Manage client documents
-- Update application statuses
-- Communicate with clients`
-}
-
-If you did not request this account or have questions, please contact your system administrator immediately.
-
-Best regards,
-Business Loan Management Team
-
----
-Business Loan Management System
-This is an automated message - please do not reply
-© 2025 Business Loan Management System. All rights reserved.
     `;
   }
 

@@ -60,8 +60,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Rajesh Kumar, Priya Sharma, Amit Patel',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T09:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -78,8 +78,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Sunita Gupta, Vikram Singh',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T10:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -96,8 +96,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Anita Desai, Ravi Mehta, Sanjay Joshi',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T11:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -114,8 +114,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Neha Agarwal, Rohit Sharma',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T12:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -132,8 +132,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Available for Assignment - Ready for New Clients',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T13:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -150,8 +150,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Deepak Verma',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T14:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -168,8 +168,8 @@ export class StaffService {
         hasAccess: true,
         verified: true,
         clientName: 'Manish Gupta',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date('2024-10-01T15:00:00.000Z'),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -178,29 +178,6 @@ export class StaffService {
     
     // Ensure exactly 7 staff members for Render deployment
     this.staff = this.staff.slice(0, 7);
-
-    // Add admin@gmail.com back as ID 7 if not present
-    const hasAdminGmail = this.staff.find(s => s.email === 'admin@gmail.com');
-    if (!hasAdminGmail) {
-      this.staff.push({
-        id: 7,
-        name: 'Admin User',
-        email: 'admin@gmail.com',
-        password: 'admin123',
-        role: StaffRole.ADMIN,
-        department: 'Administration',
-        position: 'System Administrator',
-        status: StaffStatus.ACTIVE,
-        hasAccess: true,
-        verified: true,
-        clientName: 'System Administrator',
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
-        createdAt: new Date('2024-10-01T15:00:00.000Z'),
-        updatedAt: new Date(),
-        lastLogin: new Date(),
-      });
-    }
 
     this.nextId = 9; // Next available ID
     
@@ -330,8 +307,8 @@ export class StaffService {
         position: 'System Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -346,8 +323,8 @@ export class StaffService {
         position: 'Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -362,8 +339,8 @@ export class StaffService {
         position: 'Business Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -378,8 +355,8 @@ export class StaffService {
         position: 'Manager',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -394,8 +371,8 @@ export class StaffService {
         position: 'Employee',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -410,8 +387,8 @@ export class StaffService {
         position: 'Client Manager',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -426,8 +403,8 @@ export class StaffService {
         position: 'Administrator',
         status: StaffStatus.ACTIVE,
         hasAccess: true,
-        accessToken: undefined, // No token needed for pre-verified staff
-        accessTokenExpiry: undefined,
+        accessToken: this.generateAccessToken(),
+        accessTokenExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
         lastLogin: new Date(),
@@ -447,7 +424,7 @@ export class StaffService {
   }
 
 
-  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean; verificationRequired: boolean; totalStaffCount?: number }> {
+  async createStaff(createStaffDto: CreateStaffDto, currentUserEmail?: string): Promise<{ staff: Omit<StaffEntity, 'password'>; emailSent: boolean; verificationRequired: boolean }> {
     try {
       // Check staff management permissions - only admin@gmail.com can create staff
       this.checkStaffManagementPermission(currentUserEmail);
@@ -539,14 +516,8 @@ export class StaffService {
           lastLogin: undefined // No login until verified
         };
         
-        // Safely add new staff without affecting existing staff
-        this.logger.log(`📋 Current staff count before adding: ${this.staff.length}`);
         this.staff.push(newStaff);
-        this.logger.log(`📋 Current staff count after adding: ${this.staff.length}`);
-        this.logger.log(`📋 Added staff: ${newStaff.name} (${newStaff.email}) with ID: ${newStaff.id}`);
-        
-        // Save to persistent storage
-        this.saveStaffToFile();
+        this.saveStaffToFile(); // Save to persistent storage
         
         // Force sync to Supabase for Render deployment (with retry)
         const isRender = process.env.RENDER === 'true';
@@ -712,17 +683,10 @@ export class StaffService {
       }
 
       this.logger.log(`🎉 Staff creation completed: ${createStaffDto.name} (${createStaffDto.email}) - ${isSupabaseUser ? 'Supabase' : 'Memory'} storage`);
-      
-      // Log current staff count for frontend refresh verification
-      this.logger.log(`📊 Current total staff count: ${this.staff.length}`);
-      this.logger.log(`📊 Staff with PENDING status: ${this.staff.filter(s => s.status === StaffStatus.PENDING).length}`);
-      this.logger.log(`📊 Staff with ACTIVE status: ${this.staff.filter(s => s.status === StaffStatus.ACTIVE).length}`);
-      
       return { 
         staff: staffEntity, 
         emailSent,
-        verificationRequired: staffEntity.status === StaffStatus.PENDING,
-        totalStaffCount: this.staff.length // Add this for frontend to know data updated
+        verificationRequired: staffEntity.status === StaffStatus.PENDING
       };
     } catch (error) {
       this.logger.error('❌ Error creating staff:', error);
@@ -822,57 +786,17 @@ export class StaffService {
         return defaultStaff;
       }
 
-      // Remove duplicates by ID and email to prevent React key conflicts
-      const uniqueStaff = allStaff.reduce((acc, staff) => {
-        const existingById = acc.find(s => s.id === staff.id);
-        const existingByEmail = acc.find(s => s.email === staff.email);
-        
-        if (!existingById && !existingByEmail) {
-          // Clean up staff data for table display
-          const cleanStaff = {
-            ...staff,
-            // Clear access tokens for ACTIVE users (already verified)
-            accessToken: staff.status === StaffStatus.ACTIVE ? undefined : staff.accessToken,
-            accessTokenExpiry: staff.status === StaffStatus.ACTIVE ? undefined : staff.accessTokenExpiry
-          };
-          acc.push(cleanStaff);
-        } else if (existingById && existingById.id === staff.id) {
-          // If same ID but different data, keep the newer one
-          const existingIndex = acc.findIndex(s => s.id === staff.id);
-          if (new Date(staff.updatedAt).getTime() > new Date(existingById.updatedAt).getTime()) {
-            const cleanStaff = {
-              ...staff,
-              accessToken: staff.status === StaffStatus.ACTIVE ? undefined : staff.accessToken,
-              accessTokenExpiry: staff.status === StaffStatus.ACTIVE ? undefined : staff.accessTokenExpiry
-            };
-            acc[existingIndex] = cleanStaff;
-          }
-        }
-        return acc;
-      }, [] as Omit<StaffEntity, 'password'>[]);
-
-      // Additional deduplication by email (in case of ID conflicts)
-      const finalUniqueStaff = uniqueStaff.filter((staff, index, self) => 
-        index === self.findIndex(s => s.email === staff.email)
-      );
-
       // Sort by creation date (newest first)
-      finalUniqueStaff.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      allStaff.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
-      this.logger.log(`📋 Returning ${finalUniqueStaff.length} unique staff members (removed all duplicates)`);
+      this.logger.log(`📋 Returning ${allStaff.length} total staff members (Supabase + Memory)`);
       
       // Log staff summary for debugging
-      finalUniqueStaff.forEach(staff => {
-        this.logger.log(`   - ${staff.name} (${staff.email}) - ID: ${staff.id} - ${staff.role} - ${staff.status}`);
+      allStaff.forEach(staff => {
+        this.logger.log(`   - ${staff.name} (${staff.email}) - ${staff.role} - ${staff.status}`);
       });
       
-      // Ensure all staff are returned, including PENDING ones for table display
-      this.logger.log(`📋 Staff status breakdown:`);
-      this.logger.log(`   - ACTIVE: ${finalUniqueStaff.filter(s => s.status === StaffStatus.ACTIVE).length}`);
-      this.logger.log(`   - PENDING: ${finalUniqueStaff.filter(s => s.status === StaffStatus.PENDING).length}`);
-      this.logger.log(`   - INACTIVE: ${finalUniqueStaff.filter(s => s.status === StaffStatus.INACTIVE).length}`);
-      
-      return finalUniqueStaff;
+      return allStaff;
     } catch (error) {
       this.logger.error('Error in getAllStaff:', error);
       
@@ -1030,8 +954,11 @@ export class StaffService {
       // Check staff management permissions - only admin@gmail.com can delete staff
       this.checkStaffManagementPermission(currentUserEmail);
       
-      // Allow deletion of all staff members including admin accounts
-      this.logger.log(`🗑️ Proceeding with staff deletion for ID: ${id}`);
+      // Protect the admin@gmail.com account from deletion
+      if (id === 1) {
+        this.logger.warn(`❌ Cannot delete system administrator: admin@gmail.com`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
+      }
 
       // First try to delete from Supabase
       const { data: supabaseUser, error: selectError } = await this.supabaseService.client
@@ -1087,8 +1014,11 @@ export class StaffService {
 
       const staff = this.staff[staffIndex];
       
-      // Allow deletion of all staff members including admin accounts
-      this.logger.log(`🗑️ Deleting staff member: ${staff.email} (${staff.role})`);
+      // Double-check if it's the admin@gmail.com account
+      if (staff.email === 'admin@gmail.com') {
+        this.logger.warn(`❌ Cannot delete system administrator: ${staff.email}`);
+        throw new Error(`Cannot delete system administrator. This account is protected and cannot be removed.`);
+      }
 
       this.staff.splice(staffIndex, 1);
       this.saveStaffToFile(); // Save to persistent storage
@@ -1732,19 +1662,9 @@ export class StaffService {
         this.logger.log(`📧 Found staff in Supabase: ${staff.name} (${staff.email})`);
       }
 
-      // Check if already verified and doesn't need re-verification
+      // Check if already verified
       if (staff.status === StaffStatus.ACTIVE && !staff.accessToken) {
-        this.logger.warn(`📧 Staff member ${staff.name} (${staff.email}) is already verified and active`);
-        this.logger.log(`📧 Returning existing staff data without sending email`);
-        
-        // Return the staff data without sending email
-        const { password, ...staffWithoutPassword } = staff;
-        return { staff: staffWithoutPassword, emailSent: false };
-      }
-      
-      // Allow re-verification for ACTIVE users with tokens (common in Render deployment)
-      if (staff.status === StaffStatus.ACTIVE && staff.accessToken) {
-        this.logger.log(`📧 Staff member ${staff.name} is ACTIVE but has pending token - allowing re-verification`);
+        throw new Error('Staff member is already verified and active');
       }
 
       // Generate new access token
@@ -1787,65 +1707,25 @@ export class StaffService {
       // Send verification email with enhanced message
       this.logger.log(`📧 Sending verification email to: ${staff.email}`);
       
-      // Enhanced email sending with fallback for Render deployment
+      // Use webhook email service for Render deployment, Gmail for others
       const isRender = process.env.RENDER === 'true';
       let emailSent = false;
       
-      this.logger.log(`📧 [RENDER] Starting email send process for ${staff.email}`);
-      this.logger.log(`📧 [RENDER] Environment: RENDER=${isRender}`);
-      
       if (isRender) {
-        this.logger.log(`📧 [RENDER] Using webhook email service for: ${staff.email}`);
-        try {
-          emailSent = await this.webhookEmailService.sendAccessLink(
-            staff.email,
-            staff.name,
-            staff.accessToken,
-            staff.role,
-            staff.password // Include login password for resend emails too
-          );
-          this.logger.log(`📧 [RENDER] Webhook email service result: ${emailSent}`);
-        } catch (webhookError) {
-          this.logger.error(`❌ [RENDER] Webhook email service failed:`, webhookError);
-          this.logger.log(`📧 [RENDER] Trying Gmail service as fallback...`);
-          
-          // Fallback to Gmail service
-          try {
-            emailSent = await this.gmailService.sendAccessLink(
-              staff.email,
-              staff.name,
-              staff.accessToken,
-              staff.role
-            );
-            this.logger.log(`📧 [RENDER] Gmail fallback result: ${emailSent}`);
-          } catch (gmailError) {
-            this.logger.error(`❌ [RENDER] Gmail fallback also failed:`, gmailError);
-            // Log the verification link for manual use
-            const backendUrl = process.env.BACKEND_URL || `https://${process.env.RENDER_SERVICE_NAME || 'business-loan-backend'}.onrender.com`;
-            const verificationLink = `${backendUrl}/api/staff/verify-access/${staff.accessToken}`;
-            this.logger.log(`🔗 [RENDER] MANUAL VERIFICATION LINK for ${staff.email}:`);
-            this.logger.log(`🔗 [RENDER] ${verificationLink}`);
-            this.logger.log(`🔑 [RENDER] Login Password: ${staff.password}`);
-            emailSent = true; // Consider it sent since we logged the link
-          }
-        }
+        emailSent = await this.webhookEmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role,
+          staff.password // Include login password for resend emails too
+        );
       } else {
-        this.logger.log(`📧 [LOCAL] Using Gmail service for: ${staff.email}`);
-        try {
-          emailSent = await this.gmailService.sendAccessLink(
-            staff.email,
-            staff.name,
-            staff.accessToken,
-            staff.role
-          );
-        } catch (gmailError) {
-          this.logger.error(`❌ [LOCAL] Gmail service failed:`, gmailError);
-          // Log verification link for local testing
-          const verificationLink = `http://localhost:5002/api/staff/verify-access/${staff.accessToken}`;
-          this.logger.log(`🔗 [LOCAL] MANUAL VERIFICATION LINK for ${staff.email}:`);
-          this.logger.log(`🔗 [LOCAL] ${verificationLink}`);
-          emailSent = true; // Consider it sent since we logged the link
-        }
+        emailSent = await this.gmailService.sendAccessLink(
+          staff.email,
+          staff.name,
+          staff.accessToken,
+          staff.role
+        );
       }
 
       this.logger.log(`📧 Verification email ${emailSent ? 'sent successfully ✅' : 'failed to send ❌'} to ${staff.email}`);

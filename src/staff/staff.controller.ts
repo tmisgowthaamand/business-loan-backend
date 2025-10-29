@@ -360,46 +360,11 @@ export class StaffController {
         message: 'Staff member created successfully',
         staff: result.staff,
         accessLinkSent: result.emailSent,
-        verificationRequired: result.verificationRequired,
         timestamp: new Date().toISOString()
       };
     } catch (error) {
       console.error('Error creating staff:', error);
-      
-      // Handle specific error cases with proper error codes
-      if (error.message.includes('Email already exists')) {
-        throw new BadRequestException({
-          message: 'Email already exists',
-          details: 'This email address is already registered. Please use a different email address.',
-          code: 'EMAIL_EXISTS',
-          email: createStaffDto.email
-        });
-      }
-      
-      if (error.message.includes('Invalid email format')) {
-        throw new BadRequestException({
-          message: 'Invalid email format',
-          details: error.message,
-          code: 'INVALID_EMAIL',
-          email: createStaffDto.email
-        });
-      }
-      
-      if (error.message.includes('Access denied')) {
-        throw new BadRequestException({
-          message: 'Access denied',
-          details: error.message,
-          code: 'ACCESS_DENIED'
-        });
-      }
-      
-      // Generic error
-      throw new BadRequestException({
-        message: 'Failed to create staff member',
-        details: error.message,
-        code: 'CREATE_FAILED',
-        email: createStaffDto.email
-      });
+      throw new BadRequestException(`Failed to create staff: ${error.message}`);
     }
   }
 
@@ -496,48 +461,16 @@ export class StaffController {
   async deleteStaff(@Param('id') id: string) {
     try {
       console.log('🗑️ Deleting staff member:', id);
-      const staffId = parseInt(id);
-      
       // Pass admin@gmail.com as the current user since only this user can manage staff
-      await this.staffService.deleteStaff(staffId, 'admin@gmail.com');
+      await this.staffService.deleteStaff(parseInt(id), 'admin@gmail.com');
       return {
         message: 'Staff member deleted successfully',
-        id: staffId,
+        id: parseInt(id),
         timestamp: new Date().toISOString()
       };
     } catch (error) {
       console.error('Error deleting staff member:', error);
-      
-      // If it's already a BadRequestException, re-throw it
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      
-      // Handle specific error cases
-      if (error.message.includes('Cannot delete system administrator')) {
-        throw new BadRequestException({
-          message: 'Cannot delete system administrator',
-          details: error.message,
-          code: 'PROTECTED_ACCOUNT',
-          staffId: parseInt(id)
-        });
-      }
-      
-      if (error.message.includes('assigned enquiries') || error.message.includes('assigned records')) {
-        throw new BadRequestException({
-          message: 'Cannot delete staff member',
-          details: error.message,
-          code: 'HAS_DEPENDENCIES',
-          staffId: parseInt(id)
-        });
-      }
-      
-      throw new BadRequestException({
-        message: 'Failed to delete staff member',
-        details: error.message,
-        code: 'DELETE_FAILED',
-        staffId: parseInt(id)
-      });
+      throw new BadRequestException(`Failed to delete staff member: ${error.message}`);
     }
   }
 
@@ -978,97 +911,13 @@ export class StaffController {
     }
   }
 
-  @Post('fix-all-staff')
-  async fixAllStaff() {
-    try {
-      console.log('🔧 [RENDER] Starting comprehensive staff fix...');
-      
-      // 1. Reload default staff (call public method)
-      // Note: initializeDefaultStaff is called automatically on service initialization
-      
-      // 2. Get current staff count
-      const currentStaff = await this.staffService.getAllStaff();
-      
-      // 3. Ensure admin@gmail.com exists
-      const adminExists = currentStaff.find(s => s.email === 'admin@gmail.com');
-      if (!adminExists) {
-        console.log('🔧 [RENDER] Adding missing admin@gmail.com...');
-        await this.staffService.createStaff({
-          name: 'Admin User',
-          email: 'admin@gmail.com',
-          password: 'admin123',
-          role: StaffRole.ADMIN,
-          department: 'Administration',
-          position: 'System Administrator'
-        }, 'admin@gmail.com');
-      }
-      
-      // 4. Get updated staff list
-      const updatedStaff = await this.staffService.getAllStaff();
-      
-      return {
-        message: 'Staff system fixed successfully',
-        totalStaff: updatedStaff.length,
-        adminExists: !!updatedStaff.find(s => s.email === 'admin@gmail.com'),
-        staff: updatedStaff.map(s => ({
-          id: s.id,
-          name: s.name,
-          email: s.email,
-          role: s.role,
-          status: s.status
-        })),
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      console.error('Error fixing staff system:', error);
-      throw new BadRequestException({
-        message: 'Failed to fix staff system',
-        details: error.message,
-        code: 'STAFF_FIX_FAILED'
-      });
-    }
-  }
-
   @Post('resend-verification/:id')
   async resendVerificationEmail(@Param('id') id: string) {
     try {
-      console.log(`📧 Resending verification email for staff ID: ${id}`);
-      const result = await this.staffService.resendVerificationEmail(+id);
-      
-      return {
-        message: result.emailSent ? 'Verification email sent successfully' : 'Staff member already verified - no email sent',
-        staff: result.staff,
-        emailSent: result.emailSent,
-        timestamp: new Date().toISOString()
-      };
+      return this.staffService.resendVerificationEmail(+id);
     } catch (error) {
       console.error('Error resending verification email:', error);
-      
-      // Handle specific error cases
-      if (error.message.includes('already verified and active')) {
-        throw new BadRequestException({
-          message: 'Staff member already verified',
-          details: 'This staff member is already verified and active. No verification email is needed.',
-          code: 'ALREADY_VERIFIED',
-          staffId: +id
-        });
-      }
-      
-      if (error.message.includes('not found')) {
-        throw new BadRequestException({
-          message: 'Staff member not found',
-          details: error.message,
-          code: 'STAFF_NOT_FOUND',
-          staffId: +id
-        });
-      }
-      
-      throw new BadRequestException({
-        message: 'Failed to resend verification email',
-        details: error.message,
-        code: 'RESEND_FAILED',
-        staffId: +id
-      });
+      throw new BadRequestException(`Failed to resend verification email: ${error.message}`);
     }
   }
 
@@ -2192,126 +2041,6 @@ export class StaffController {
     } catch (error) {
       console.error('❌ [RENDER] Failed to grant access to all staff:', error);
       throw new BadRequestException(`Failed to grant access: ${error.message}`);
-    }
-  }
-
-  // Test SendGrid configuration and email sending
-  @Post('test/sendgrid')
-  async testSendGrid(@Body() body: { email?: string }) {
-    const testEmail = body.email || 'gowthaamaneswar98@gmail.com';
-    
-    console.log('🧪 [SENDGRID] Testing SendGrid configuration...');
-    console.log(`📧 Target email: ${testEmail}`);
-    
-    try {
-      // Check environment variables
-      const sendGridApiKey = process.env.SENDGRID_API_KEY || this.configService.get('SENDGRID_API_KEY');
-      const sendGridFromEmail = process.env.SENDGRID_FROM_EMAIL || this.configService.get('SENDGRID_FROM_EMAIL');
-      const gmailEmail = process.env.GMAIL_EMAIL || this.configService.get('GMAIL_EMAIL');
-      
-      console.log('🔧 [SENDGRID] Configuration check:');
-      console.log(`   - API Key: ${sendGridApiKey ? 'Present ✅' : 'Missing ❌'}`);
-      console.log(`   - From Email: ${sendGridFromEmail || 'Missing ❌'}`);
-      console.log(`   - Gmail Fallback: ${gmailEmail || 'Missing ❌'}`);
-      
-      if (!sendGridApiKey) {
-        return {
-          success: false,
-          error: 'SENDGRID_API_KEY not configured',
-          instructions: [
-            '1. Sign up at https://app.sendgrid.com',
-            '2. Create API key: Settings > API Keys',
-            '3. Set SENDGRID_API_KEY environment variable',
-            '4. Restart the application'
-          ]
-        };
-      }
-      
-      if (!sendGridApiKey.startsWith('SG.')) {
-        return {
-          success: false,
-          error: 'Invalid SendGrid API key format',
-          message: 'API key should start with "SG."'
-        };
-      }
-      
-      // Test SendGrid with a simple message
-      const sgMail = require('@sendgrid/mail');
-      sgMail.setApiKey(sendGridApiKey);
-      
-      const fromEmail = sendGridFromEmail || gmailEmail || 'gokrishna98@gmail.com';
-      
-      const msg = {
-        to: testEmail,
-        from: {
-          email: fromEmail,
-          name: 'Business Loan System Test'
-        },
-        subject: 'SendGrid Test Email',
-        html: `
-          <h2>SendGrid Test Email</h2>
-          <p>This is a test email to verify SendGrid configuration.</p>
-          <p>Sent at: ${new Date().toISOString()}</p>
-          <p>From: ${fromEmail}</p>
-          <p>To: ${testEmail}</p>
-        `,
-        text: `SendGrid Test Email - Sent at: ${new Date().toISOString()}`
-      };
-      
-      console.log(`📧 [SENDGRID] Attempting to send test email...`);
-      console.log(`   - From: ${fromEmail}`);
-      console.log(`   - To: ${testEmail}`);
-      
-      const result = await sgMail.send(msg);
-      
-      console.log('✅ [SENDGRID] Test email sent successfully!');
-      
-      return {
-        success: true,
-        message: 'SendGrid test email sent successfully',
-        details: {
-          from: fromEmail,
-          to: testEmail,
-          messageId: result[0]?.headers?.['x-message-id'],
-          statusCode: result[0]?.statusCode
-        },
-        timestamp: new Date().toISOString()
-      };
-      
-    } catch (error) {
-      console.error('❌ [SENDGRID] Test failed:', error.message);
-      
-      let errorDetails: any = {
-        message: error.message,
-        type: error.constructor.name
-      };
-      
-      if (error.response?.body?.errors) {
-        errorDetails.sendgridErrors = error.response.body.errors;
-        
-        // Check for specific error types
-        const senderError = error.response.body.errors.find((err: any) => 
-          err.message?.includes('verified Sender Identity') || 
-          err.field === 'from'
-        );
-        
-        if (senderError) {
-          errorDetails.solution = [
-            '1. Go to https://app.sendgrid.com/settings/sender_auth',
-            '2. Click "Verify a Single Sender"',
-            `3. Add and verify: ${process.env.GMAIL_EMAIL || 'gokrishna98@gmail.com'}`,
-            '4. Set SENDGRID_FROM_EMAIL environment variable',
-            '5. Restart the application'
-          ];
-        }
-      }
-      
-      return {
-        success: false,
-        error: 'SendGrid test failed',
-        details: errorDetails,
-        timestamp: new Date().toISOString()
-      };
     }
   }
 
