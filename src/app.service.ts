@@ -163,7 +163,12 @@ export class AppService implements OnModuleInit {
     };
   }
 
-  getHello(): string {
-    return 'Business Loan Portal Backend - Ready for Deployment!';
+  getHello() {
+    return {
+      message: "India Medical Insurance Business Loan ML Dashboard API",
+      version: "1.0.0",
+      status: "online",
+      timestamp: new Date().toISOString()
+    };
   }
 }

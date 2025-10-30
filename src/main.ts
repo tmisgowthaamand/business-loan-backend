@@ -147,7 +147,9 @@ async function bootstrap() {
     maxAge: isProduction ? 86400 : 0, // Cache preflight for 24 hours in production
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: ['/'] // Exclude root path from global prefix
+  });
 
   const port = process.env.PORT || 5002; // Use Render's port or fallback to 5002
   console.log(`🌐 Attempting to start server on port ${port}...`);
